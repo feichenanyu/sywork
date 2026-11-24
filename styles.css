@@ -744,15 +744,28 @@ code { padding: 2px 6px; border-radius: 5px; background: var(--color-surface-sub
 .assistant-composer textarea:focus { border-color: var(--color-primary); }
 .composer-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
 .composer-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
-.composer-mode { display: inline-flex; align-items: center; gap: 6px; color: var(--color-muted); font-size: 11.5px; white-space: nowrap; }
-.composer-mode select {
-  padding: 4px 7px;
+.composer-hint { color: var(--color-muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.mode-switch {
+  display: inline-flex;
+  padding: 2px;
   border: 1px solid var(--color-border-strong);
-  border-radius: 6px;
+  border-radius: 7px;
   background: var(--color-surface);
+  flex: 0 0 auto;
+}
+.mode-switch button {
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
   color: var(--color-text-secondary);
   font-size: 11.5px;
+  line-height: 1.5;
+  transition: background var(--transition), color var(--transition);
 }
+.mode-switch button:hover { color: var(--color-primary-hover); }
+.mode-switch button.active { background: var(--color-primary-soft); color: var(--color-primary-hover); font-weight: 600; }
 .field-note {
   grid-column: 1 / -1;
   margin: 0;
@@ -771,11 +784,14 @@ code { padding: 2px 6px; border-radius: 5px; background: var(--color-surface-sub
   .chat-stack { max-width: 100%; }
   .assistant-composer { padding: 10px 14px 12px; }
   .composer-bar { flex-direction: column; align-items: stretch; }
-  .composer-left { justify-content: space-between; }
+  .composer-left { justify-content: space-between; flex-wrap: wrap; gap: 6px; }
+  .composer-hint { white-space: normal; }
   .composer-bar .btn { width: 100%; justify-content: center; }
   .chat-preview-meta { display: none; }
-  .chat-preview-foot { flex-direction: column; align-items: stretch; }
+  .chat-preview-foot { flex-direction: column; align-items: stretch; gap: 8px; }
   .chat-preview-foot .btn { width: 100%; justify-content: center; }
+  .mode-switch { display: flex; width: 100%; }
+  .mode-switch button { flex: 1; text-align: center; justify-content: center; }
   .chat-preview-hint { white-space: normal; }
   .chat-preview-body { max-height: 300px; overflow-x: hidden; }
   .chat-task-table, .chat-task-table tbody, .chat-task-table tr, .chat-task-table td { display: block; width: 100%; }

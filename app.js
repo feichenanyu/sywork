@@ -169,7 +169,6 @@
     view: ["overview", "planning", "assistant", "automation", ...TYPES].includes(location.hash.slice(1)) ? location.hash.slice(1) : "overview",
     planning: { project: "all", status: "active" },
     assistantDraft: "",
-    assistantMode: "full",
     filters: Object.fromEntries(TYPES.map(type => [type, { query: "", status: "all", sort: "updated" }]))
   };
 
@@ -373,7 +372,11 @@
         at: text(message.at) || now(),
         engine: text(message.engine),
         fileName: text(message.fileName),
-        tasks: Array.isArray(message.tasks) ? message.tasks : []
+        tasks: Array.isArray(message.tasks) ? message.tasks : [],
+        entries: Array.isArray(message.entries) ? message.entries.filter(entry => entry && text(entry.title).trim()) : [],
+        project: text(message.project),
+        mode: ["full", "light", "original"].includes(message.mode) ? message.mode : "",
+        committed: Boolean(message.committed)
       }))
     };
     result.t5tReports = Array.isArray(source.t5tReports) ? source.t5tReports.filter(report => report && /^\d{4}-\d{2}-\d{2}$/.test(report.date) && text(report.markdown)).map((report, index) => ({
@@ -842,25 +845,62 @@
       const stripped = trimmed.replace(/^(?:[-*•+·]|\(?\d{1,2}[).、]|[①②③④⑤⑥⑦⑧⑨⑩])\s*/, "").trim();
       if (!stripped) return;
       const parts = [];
-      stripped.split(/[;；]+/).forEach(piece => {
-        if (/。/.test(piece)) piece.split(/。+/).forEach(sub => parts.push(sub));
-        else parts.push(piece);
-      });
+      stripped.split(/[;；]+/).forEach(piece => piece.split(/。+/).forEach(sub => parts.push(sub)));
       parts.forEach(part => {
         const clean = part.trim().replace(/^[，,、\s：:]+/, "");
-        if (clean.replace(/\s/g, "").length >= 2) segments.push(clean);
+        if (clean.replace(/\s/g, "").length < 2) return;
+        // 「项目：X」这类纯声明交由标题清洗判定，清洗后为空自然被跳过
+        segments.push(clean);
       });
     });
     return segments;
   }
 
+  function cleanEntryTitle(segment) {
+    let title = text(segment)
+      .replace(/项目(?:名称|名)?\s*[:：]\s*[^，,；;。\n]+/g, "")
+      .replace(/(?:负责人|责任人|Owner)\s*[:：]?\s*[\u4e00-\u9fa5A-Za-z0-9_]{2,6}(?=[\s，,；;。、]|$)/gi, "")
+      .replace(/(?:负责人|责任人|Owner)\s*[:：]\s*[^，,；;。\n]+/gi, "")
+      .replace(/@[\u4e00-\u9fa5A-Za-z0-9_]{1,12}/g, "")
+      .replace(/(?:优先级|重要程度)\s*[:：]?\s*(?:最高|高|中|低|紧急)?/g, "")
+      .replace(/^(?:需求|事项|任务|日程|安排|上线时间|发布时间|时间|上线|发布)\s*[:：]\s*/, "");
+    title = title
+      .replace(/(?:定在|定于|计划在|安排在|排期在|预计在?)\s*/g, " ")
+      .replace(DATE_PATTERN, " ")
+      .replace(/^[\s，,、：:]+/, "")
+      .replace(/[\s，,、：:]+$/, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+    // 只剩动作词（如「上线」）说明这句只表达了时间意图，返回 null 交给项目兜底
+    if (/^(?:上线|发布|完成|交付|验收|评审|立项|启动|做|搞)$/.test(title)) return null;
+    return title;
+  }
+
+  function cleanProjectName(value) {
+    return text(value)
+      .replace(/\s*(?:负责人|责任人|优先级|重要程度|当前阶段|阶段|开始|截止|工期).*$/, "")
+      .replace(/[\s，,、：:。;；]+$/, "")
+      .trim();
+  }
+
   function detectDefaultProject(raw) {
     const content = text(raw);
-    let match = content.match(/项目(?:名称|名)?\s*[:：]\s*([^\s，,；;。\n]+)/);
-    if (match) return match[1].trim();
+    let match = content.match(/项目(?:名称|名)?\s*[:：]\s*([^，,；;。\n]+)/);
+    if (match) return cleanProjectName(match[1]);
     match = content.match(/【([^】]{2,20})】/);
     if (match) return match[1].trim();
     return "";
+  }
+
+  // 兜底清洗：只去掉标签，保留用户原话，避免整行被判成空
+  function mildEntryTitle(segment) {
+    return text(segment)
+      .replace(/项目(?:名称|名)?\s*[:：]\s*/g, "")
+      .replace(/(?:负责人|责任人|Owner)\s*[:：]\s*/gi, "")
+      .replace(/(?:优先级|重要程度)\s*[:：]?\s*(?:最高|高|中|低|紧急)?/g, "")
+      .replace(/@[\u4e00-\u9fa5A-Za-z0-9_]{1,12}/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   function detectOwner(raw) {
@@ -883,7 +923,7 @@
     const mode = options.mode || "full";
     const segments = splitTaskSegments(input);
     if (!segments.length) throw new Error("没读到可拆解的内容，请用一行一件事的方式描述");
-    const defaultProject = options.projectName || detectDefaultProject(input) || `对话拆解 ${base}`;
+    const defaultProject = options.projectName || detectDefaultProject(input) || `对话拆解 ${base.slice(5)}`;
     const entries = segments.map(segment => {
       const dates = findDatesInText(segment, base);
       let startDate = "";
@@ -903,14 +943,18 @@
       }
       const ownerInSegment = detectOwner(segment);
       const stageHit = LIFECYCLE_STAGES.find(stage => segment.includes(stage)) || "";
-      const title = segment
-        .replace(/项目(?:名称|名)?\s*[:：]\s*[^\s，,；;。]+/g, "")
-        .replace(/负责人\s*[:：]\s*[^\s，,；;。]+/g, "")
-        .replace(/@[\u4e00-\u9fa5A-Za-z0-9_]{1,12}/g, "")
-        .replace(/\s+/g, " ")
-        .trim();
+      let title = cleanEntryTitle(segment);
+      if (title === "") {
+        const mild = mildEntryTitle(segment);
+        const isProjectOnly = mild && mild.replace(/\s/g, "") === defaultProject.replace(/\s/g, "");
+        if (mild && !isProjectOnly) title = mild;
+      }
+      if (title === null) title = "";
+      // 只剩「12 月 15 日上线」这类纯时间意图时，用「项目 + 动作」兜底
+      if (!title) title = /(上线|发布)/.test(segment) ? `${defaultProject} 上线` : stageHit ? `${defaultProject} ${stageHit}` : "";
+      if (!title) return null;
       return {
-        title: title || segment,
+        title,
         project: "",
         startDate,
         dueDate,
@@ -920,13 +964,61 @@
         sourceNote: "来源：AI 对话拆解",
         detail: ""
       };
-    });
+    }).filter(Boolean);
+    if (!entries.length) throw new Error("没读到可拆解的事项，请补充一句具体要做什么");
+    return { entries, defaultProject, mode, segments: entries.length };
+  }
+
+  // 从「输入里有没有说粒度」推断：默认完整，用户说了才听用户的
+  function detectGranularity(input) {
+    const line = text(input);
+    if (/(不要拆|别拆|原样|保留原任务|照抄|只记录|就记一下)/.test(line)) return "original";
+    if (/(精简|简单点|简单些|粗略|粗一点|每阶段一个|不要那么细|不要这么细|别那么细)/.test(line)) return "light";
+    return "full";
+  }
+
+  // 短句追问（如「精简点」「按原样」）用于调整上一条未入库的预览
+  function granularityFromFollowUp(input) {
+    const line = text(input).replace(/[\s。！!，,、~]/g, "");
+    if (!line || line.length > 10) return "";
+    const bare = line.replace(/^(?:再|按|改|换|用|给我)+/, "");
+    if (/^(原样|保留原任务|不要拆了?|别拆了?)$/.test(bare)) return "original";
+    if (/^(精简|简单|粗略|粗)(一?[点些下])?$/.test(bare)) return "light";
+    if (/^(详细|完整|展开|全一点|全一些)(一?[点些下])?$/.test(bare)) return "full";
+    return "";
+  }
+
+  function buildTasksFromEntries(entries, project, mode) {
     const tasks = [];
-    entries.forEach(entry => {
-      tasks.push(...expandEntry(entry, { mode, scope: "all", defaultProject }));
-    });
+    (entries || []).forEach(entry => tasks.push(...expandEntry(entry, { mode, scope: "all", defaultProject: project })));
     if (!tasks.length) throw new Error("没有生成任务，请补充具体事项名称");
-    return { tasks, defaultProject, segments: entries.length };
+    return tasks;
+  }
+
+  function pushPreview({ entries, project, mode, engine, text: line }) {
+    const tasks = buildTasksFromEntries(entries, project, mode);
+    pushAssistantMessage({
+      role: "assistant", kind: "preview", engine, text: line,
+      tasks, entries, project, mode
+    });
+  }
+
+  function setPreviewMode(messageId, mode) {
+    const message = (state.assistant?.messages || []).find(item => item.id === messageId);
+    if (!message || message.committed) return;
+    if (!Array.isArray(message.entries) || !message.entries.length) {
+      showToast("这条预览是旧版本生成的，无法切换粒度，重新发一次即可", "error");
+      return;
+    }
+    if (message.mode === mode) return;
+    try {
+      message.tasks = buildTasksFromEntries(message.entries, message.project, mode);
+      message.mode = mode;
+      saveState();
+      renderAssistantLog();
+    } catch (error) {
+      showToast(error.message, "error");
+    }
   }
 
   // ---------- 模型调用 ----------
@@ -1006,6 +1098,9 @@
       engine: text(message.engine),
       fileName: text(message.fileName),
       tasks: Array.isArray(message.tasks) ? message.tasks : [],
+      entries: Array.isArray(message.entries) ? message.entries : [],
+      project: text(message.project),
+      mode: ["full", "light", "original"].includes(message.mode) ? message.mode : "",
       committed: false
     });
     if (state.assistant.messages.length > 40) state.assistant.messages = state.assistant.messages.slice(-40);
@@ -1021,7 +1116,7 @@
     return `<article class="chat-preview">
       <header class="chat-preview-head"><span class="chat-preview-badge">${icon("spark")}${escapeHtml(message.engine || "拆解结果")}</span><span class="chat-preview-meta">${tasks.length} 项任务 · ${projects.length} 个项目</span></header>
       <div class="chat-preview-body"><table class="chat-task-table"><thead><tr><th>项目</th><th>任务</th><th>阶段</th><th>负责人</th><th>截止</th></tr></thead><tbody>${rows}</tbody></table>${more}</div>
-      <footer class="chat-preview-foot">${message.committed ? `<span class="chat-committed">${icon("check")}已加入工作台</span><button class="btn btn-secondary btn-small" data-action="assistant-goto">查看甘特图</button>` : `<span class="chat-preview-hint">${escapeHtml(projects.join("、"))}</span><button class="btn btn-primary btn-small" data-action="assistant-commit" data-msg="${escapeHtml(message.id)}">${icon("check")}加入工作台</button>`}</footer>
+      <footer class="chat-preview-foot">${message.committed ? `<span class="chat-committed">${icon("check")}已加入工作台</span><button class="btn btn-secondary btn-small" data-action="assistant-goto">查看甘特图</button>` : `<div class="mode-switch" role="group" aria-label="拆解粒度">${[["full", "完整"], ["light", "精简"], ["original", "原样"]].map(([value, label]) => `<button type="button" data-action="assistant-mode" data-msg="${escapeHtml(message.id)}" data-mode="${value}" class="${(message.mode || "full") === value ? "active" : ""}" aria-pressed="${(message.mode || "full") === value}">${label}</button>`).join("")}</div><button class="btn btn-primary btn-small" data-action="assistant-commit" data-msg="${escapeHtml(message.id)}">${icon("check")}加入工作台</button>`}</footer>
     </article>`;
   }
 
@@ -1086,7 +1181,7 @@
         <div class="composer-bar">
           <div class="composer-left">
             <button type="button" class="text-btn" data-action="assistant-upload">${icon("upload")}上传任务表</button>
-            <label class="composer-mode"><span>拆解粒度</span><select id="assistantMode">${[["full", "完整十阶段"], ["light", "每阶段一个动作"], ["original", "保留原任务"]].map(([value, label]) => `<option value="${value}" ${selected(ui.assistantMode || "full", value)}>${label}</option>`).join("")}</select></label>
+            <span class="composer-hint">默认按完整十阶段拆解，结果里可随时切换粒度</span>
           </div>
           <button type="submit" class="btn btn-primary btn-small">${icon("send")}拆解</button>
         </div>
@@ -1103,11 +1198,11 @@
       const mapping = autoMapping(parsed.headers);
       if (!mapping.title) throw new Error("表格里没识别到「规划事项 / 需求」列，请到「项目规划 → 导入规划表」手动指定列名后再拆解");
       const fallbackProject = file.name.replace(/\.[^.]+$/, "") || "对话拆解";
-      const tasks = [];
+      const entries = [];
       parsed.rows.forEach((row, rowIndex) => {
         const title = text(row[mapping.title]).trim();
         if (!title) return;
-        tasks.push(...expandEntry({
+        entries.push({
           title,
           project: text(mapping.project ? row[mapping.project] : "").trim() || fallbackProject,
           startDate: parseImportedDate(row[mapping.start]),
@@ -1118,13 +1213,10 @@
           initialStatus: statusFrom(mapping.status ? row[mapping.status] : "", false),
           sourceNote: `来源：${file.name} 第 ${rowIndex + 2} 行`,
           detail: text(mapping.description ? row[mapping.description] : "")
-        }, { mode: ui.assistantMode || "full", scope: "all", defaultProject: fallbackProject }));
+        });
       });
-      if (!tasks.length) throw new Error("表格里没有可拆解的行");
-      pushAssistantMessage({
-        role: "assistant", kind: "preview", engine: "表格导入拆解",
-        text: `已识别 ${parsed.rows.length} 行规划，生成 ${tasks.length} 项任务。`, tasks
-      });
+      if (!entries.length) throw new Error("表格里没有可拆解的行");
+      pushPreview({ entries, project: fallbackProject, mode: "full", engine: "表格导入拆解", text: `已识别 ${parsed.rows.length} 行规划。` });
     } catch (error) {
       pushAssistantMessage({ role: "assistant", kind: "error", text: `表格拆解失败：${error.message || "格式不正确"}` });
     }
@@ -1145,6 +1237,20 @@
     if (inputEl) inputEl.value = "";
     pushAssistantMessage({ role: "user", kind: "text", text: input });
 
+    // 短句追问：直接调整上一条未入库的预览，不再重复生成
+    const followUp = granularityFromFollowUp(input);
+    if (followUp) {
+      const lastPreview = [...(state.assistant?.messages || [])].reverse().find(item => item.kind === "preview" && !item.committed && Array.isArray(item.entries) && item.entries.length);
+      if (lastPreview) {
+        setPreviewMode(lastPreview.id, followUp);
+        pushAssistantMessage({
+          role: "assistant", kind: "text",
+          text: `已按「${followUp === "full" ? "完整十阶段" : followUp === "light" ? "每阶段一个动作" : "保留原任务"}」重新拆解，共 ${lastPreview.tasks.length} 项任务。`
+        });
+        return;
+      }
+    }
+
     if (modelConfigured()) {
       const log = document.getElementById("assistantLog");
       const pending = document.createElement("div");
@@ -1155,11 +1261,11 @@
       try {
         const result = await requestModelDecomposition([...assistantHistoryForModel(), { role: "user", content: input }]);
         const config = loadModelConfig();
-        const tasks = [];
-        result.items.forEach(item => tasks.push(...expandEntry(item, { mode: ui.assistantMode || "full", scope: "all", defaultProject: item.project || detectDefaultProject(input) || `对话拆解 ${chinaToday()}` })));
+        const entryProject = result.items.find(item => item.project)?.project || detectDefaultProject(input) || `对话拆解 ${chinaToday()}`;
+        const normalized = result.items.map(item => ({ ...item, project: item.project || entryProject }));
         pending.remove();
         if (result.reply) pushAssistantMessage({ role: "assistant", kind: "text", text: result.reply });
-        pushAssistantMessage({ role: "assistant", kind: "preview", engine: `模型：${config.model}`, tasks });
+        pushPreview({ entries: normalized, project: entryProject, mode: detectGranularity(input), engine: `模型：${config.model}` });
         return;
       } catch (error) {
         pending.remove();
@@ -1168,10 +1274,11 @@
     }
 
     try {
-      const result = decomposeFromText(input, { mode: ui.assistantMode || "full" });
-      pushAssistantMessage({
-        role: "assistant", kind: "preview", engine: modelConfigured() ? "本地规则拆解（模型失败后回退）" : "本地规则拆解",
-        text: `识别到 ${result.segments} 条规划，生成 ${result.tasks.length} 项任务。`, tasks: result.tasks
+      const result = decomposeFromText(input);
+      pushPreview({
+        entries: result.entries, project: result.defaultProject, mode: detectGranularity(input),
+        engine: modelConfigured() ? "本地规则拆解（模型失败后回退）" : "本地规则拆解",
+        text: `识别到 ${result.segments} 条规划。`
       });
     } catch (error) {
       pushAssistantMessage({ role: "assistant", kind: "error", text: error.message });
@@ -2012,6 +2119,7 @@
       document.getElementById("assistantInput")?.focus();
     }
     if (action === "assistant-commit") commitAssistantMessage(button.dataset.msg);
+    if (action === "assistant-mode") setPreviewMode(button.dataset.msg, button.dataset.mode);
   });
 
   main.addEventListener("change", event => {
@@ -2022,7 +2130,6 @@
     if (input.id === "projectFilter") { ui.planning.project = input.value; render(); }
     if (input.id === "ganttStatus") { ui.planning.status = input.value; render(); }
     if (input.id === "reminderTime") { state.settings.reminderTime = input.value || "09:00"; saveState(); showToast(`每日提醒时间已设为 ${state.settings.reminderTime}`); }
-    if (input.id === "assistantMode") { ui.assistantMode = input.value; saveState(); }
   });
 
   main.addEventListener("input", event => {
