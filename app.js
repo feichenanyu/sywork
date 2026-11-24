@@ -1050,11 +1050,9 @@
     };
   }
 
-  async function requestModelDecomposition(history) {
-    const config = loadModelConfig();
-    if (!config.endpoint || !config.model) throw new Error("尚未配置模型");
+  async function postChat(config, messages, { timeout = 30000, maxTokens } = {}) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30000);
+    const timer = setTimeout(() => controller.abort(), timeout);
     let response;
     try {
       response = await fetch(config.endpoint, {
@@ -1066,10 +1064,8 @@
         body: JSON.stringify({
           model: config.model,
           temperature: 0.2,
-          messages: [
-            { role: "system", content: `${ASSISTANT_SYSTEM_PROMPT} ${chinaToday()}。` },
-            ...history
-          ]
+          ...(maxTokens ? { max_tokens: maxTokens } : {}),
+          messages
         }),
         signal: controller.signal
       });
@@ -1080,6 +1076,16 @@
     const data = await response.json();
     const content = data?.choices?.[0]?.message?.content;
     if (!content) throw new Error("模型没有返回内容");
+    return content;
+  }
+
+  async function requestModelDecomposition(history) {
+    const config = loadModelConfig();
+    if (!config.endpoint || !config.model) throw new Error("尚未配置模型");
+    const content = await postChat(config, [
+      { role: "system", content: `${ASSISTANT_SYSTEM_PROMPT} ${chinaToday()}。` },
+      ...history
+    ]);
     const parsed = parseModelJson(content);
     const items = Array.isArray(parsed.items) ? parsed.items.map(normalizeModelItem).filter(item => item.title) : [];
     if (!items.length) throw new Error("模型没有识别出任务条目");
@@ -1298,11 +1304,54 @@
     render();
   }
 
+  function describeFetchError(error) {
+    if (error.name === "AbortError") return "请求超时，接口没在限定时间内响应";
+    const raw = text(error.message);
+    if (/Failed to fetch|NetworkError|Load failed/i.test(raw)) return "网络不可达或被跨域（CORS）策略拦截，浏览器不允许页面直连该接口";
+    return raw || "未知错误";
+  }
+
+  async function testModelConnection() {
+    const box = document.getElementById("modelTestResult");
+    if (!box) return;
+    const config = {
+      endpoint: document.getElementById("modelEndpoint").value.trim(),
+      model: document.getElementById("modelName").value.trim(),
+      apiKey: document.getElementById("modelKey").value.trim()
+    };
+    if (!config.endpoint || !config.model) {
+      box.className = "model-test-result error";
+      box.textContent = "先把接口地址和模型名称填上，再测。";
+      return;
+    }
+    box.className = "model-test-result pending";
+    box.textContent = "正在发一次最小请求…";
+    const started = Date.now();
+    try {
+      const reply = await postChat(config, [{ role: "user", content: "只回复两个字：收到" }], { timeout: 20000, maxTokens: 16 });
+      const ms = Date.now() - started;
+      saveModelConfig(config);
+      box.className = "model-test-result ok";
+      box.textContent = `连接成功 · ${ms} ms · 模型回："${text(reply).trim().slice(0, 24)}" · 配置已保存`;
+      render();
+    } catch (error) {
+      box.className = "model-test-result error";
+      box.textContent = `连接失败：${describeFetchError(error)}。当前仍会使用本地规则拆解。`;
+    }
+  }
+
   function openModelDialog() {
     const config = loadModelConfig();
     document.getElementById("modelEndpoint").value = config.endpoint || "";
     document.getElementById("modelName").value = config.model || "";
     document.getElementById("modelKey").value = config.apiKey || "";
+    const box = document.getElementById("modelTestResult");
+    if (box) {
+      box.className = "model-test-result";
+      box.textContent = config.endpoint && config.model
+        ? `当前已保存：${config.model}。想确认真的通，点「测试连接」。`
+        : "还没配置。点一下「测试连接」会真发一次最小请求，直接看通不通。";
+    }
     document.getElementById("modelDialog").showModal();
   }
 
@@ -2172,6 +2221,8 @@
     showToast(config.endpoint && config.model ? `已接入模型 ${config.model}` : "模型配置已清除，回到本地规则拆解");
     render();
   });
+
+  document.getElementById("modelTestBtn").addEventListener("click", testModelConnection);
 
   document.getElementById("modelClearBtn").addEventListener("click", () => {
     saveModelConfig({ endpoint: "", model: "", apiKey: "" });

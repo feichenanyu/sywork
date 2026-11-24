@@ -156,6 +156,7 @@
         <div class="form-field"><label for="modelName">模型名称</label><input id="modelName" type="text" placeholder="例如 gpt-4o-mini / deepseek-chat" autocomplete="off"></div>
         <div class="form-field"><label for="modelKey">API Key</label><input id="modelKey" type="password" placeholder="sk-..." autocomplete="off"></div>
         <p class="field-note full">密钥仅保存在本机浏览器 localStorage，不写入 JSON 备份、不随导出文件外传。浏览器直连第三方接口受对方 CORS 策略限制，调用失败会自动回退本地规则并明确提示。</p>
+        <div class="model-test full"><button type="button" class="btn btn-secondary btn-small" id="modelTestBtn"><svg class="icon"><use href="#i-cpu"/></svg>测试连接</button><span class="model-test-result" id="modelTestResult">还没测过。点一下会真发一次最小请求，直接看通不通。</span></div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" id="modelClearBtn">清除配置</button>
