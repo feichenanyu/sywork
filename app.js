@@ -1050,6 +1050,22 @@
     };
   }
 
+  function looksLikeHtml(body) {
+    return /^\s*(?:<!doctype\s+html|<html\b|<head\b|<body\b|<div\b|<title\b|<script\b)/i.test(body || "");
+  }
+
+  function modelRequestError(message, details) {
+    const error = new Error(message);
+    error.modelDetails = details || {};
+    return error;
+  }
+
+  function chatCompletionsEndpoint(endpoint) {
+    const raw = text(endpoint).trim().replace(/\/+$/, "");
+    if (!raw || /\/chat\/completions$/i.test(raw)) return raw;
+    return `${raw}/chat/completions`;
+  }
+
   async function postChat(config, messages, { timeout = 30000, maxTokens } = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
@@ -1072,10 +1088,37 @@
     } finally {
       clearTimeout(timer);
     }
-    if (!response.ok) throw new Error(`模型接口返回 ${response.status}`);
-    const data = await response.json();
+
+    let body = "";
+    try { body = await response.text(); } catch (error) { body = ""; }
+    const details = {
+      status: response.status,
+      contentType: response.headers.get("content-type") || "",
+      finalUrl: response.url || "",
+      redirected: Boolean(response.redirected),
+      snippet: body.trim().replace(/\s+/g, " ").slice(0, 160)
+    };
+
+    if (!response.ok) {
+      throw modelRequestError(`模型接口返回 HTTP ${response.status}`, {
+        ...details, kind: looksLikeHtml(body) ? "html" : "http"
+      });
+    }
+    if (looksLikeHtml(body)) {
+      throw modelRequestError("接口返回了 HTML 网页，不是 JSON", { ...details, kind: "html" });
+    }
+    if (!body.trim()) {
+      throw modelRequestError("接口返回了空内容", { ...details, kind: "empty" });
+    }
+    let data;
+    try { data = JSON.parse(body); }
+    catch (error) {
+      throw modelRequestError("接口返回内容不是合法 JSON", { ...details, kind: "json" });
+    }
     const content = data?.choices?.[0]?.message?.content;
-    if (!content) throw new Error("模型没有返回内容");
+    if (!content) {
+      throw modelRequestError("返回 JSON 缺少 choices[0].message.content", { ...details, kind: "shape" });
+    }
     return content;
   }
 
@@ -1275,7 +1318,7 @@
         return;
       } catch (error) {
         pending.remove();
-        pushAssistantMessage({ role: "assistant", kind: "error", text: `模型调用失败：${error.name === "AbortError" ? "请求超时（30s）" : error.message}。已自动改用本地规则拆解。` });
+        pushAssistantMessage({ role: "assistant", kind: "error", text: `模型调用失败：${describeFetchError(error, true)}。已自动改用本地规则拆解。` });
       }
     }
 
@@ -1304,18 +1347,45 @@
     render();
   }
 
-  function describeFetchError(error) {
+  function describeFetchError(error, brief = false) {
     if (error.name === "AbortError") return "请求超时，接口没在限定时间内响应";
     const raw = text(error.message);
     if (/Failed to fetch|NetworkError|Load failed/i.test(raw)) return "网络不可达或被跨域（CORS）策略拦截，浏览器不允许页面直连该接口";
-    return raw || "未知错误";
+    const d = error.modelDetails;
+    if (!d || !d.kind) return raw || "未知错误";
+
+    const lines = [];
+    if (d.kind === "html") {
+      lines.push("接口返回的是 HTML 网页，不是模型接口的 JSON —— 请求打到了一个页面，而不是 API。");
+      if (!brief) lines.push("常见原因：① 接口地址填成了网站首页或后台地址，缺少 /chat/completions；② 被登录页、SSO 或网关拦截后跳转；③ 路径写错，服务端返回了 404 页面。");
+    } else if (d.kind === "json") {
+      lines.push("接口返回的不是合法 JSON，可能经过了代理或被替换成报错内容。");
+    } else if (d.kind === "http") {
+      lines.push(`接口返回 HTTP ${d.status}，通常是 API Key 无效、模型名不存在或接口路径不对。`);
+    } else if (d.kind === "empty") {
+      lines.push("接口返回了空内容，可能是网关拦截或请求方式不被支持。");
+    } else if (d.kind === "shape") {
+      lines.push("接口回了 JSON，但结构不是 OpenAI 兼容格式（缺少 choices[0].message.content）。");
+    } else {
+      lines.push(raw);
+    }
+    if (!brief) {
+      const facts = [];
+      if (d.status) facts.push(`HTTP ${d.status}`);
+      if (d.contentType) facts.push(`Content-Type: ${d.contentType}`);
+      if (d.redirected) facts.push(`发生了重定向 → ${d.finalUrl || "另一个地址"}`);
+      if (d.snippet) facts.push(`响应开头：${d.snippet.slice(0, 90)}`);
+      if (facts.length) lines.push(`实际拿到：${facts.join(" · ")}`);
+    }
+    return lines.join(brief ? " " : "\n");
   }
 
   async function testModelConnection() {
     const box = document.getElementById("modelTestResult");
-    if (!box) return;
+    const endpointInput = document.getElementById("modelEndpoint");
+    if (!box || !endpointInput) return;
     const config = {
-      endpoint: document.getElementById("modelEndpoint").value.trim(),
+      endpoint: endpointInput.value.trim(),
       model: document.getElementById("modelName").value.trim(),
       apiKey: document.getElementById("modelKey").value.trim()
     };
@@ -1324,19 +1394,39 @@
       box.textContent = "先把接口地址和模型名称填上，再测。";
       return;
     }
+    const probe = [{ role: "user", content: "只回复两个字：收到" }];
+    const tidy = value => text(value).replace(/[。.！!；;]\s*$/, "");
+    const showOk = (reply, ms, note) => {
+      saveModelConfig(config);
+      box.className = "model-test-result ok";
+      box.textContent = `连接成功 · ${ms} ms · 模型回："${text(reply).trim().slice(0, 24)}"${note ? ` · ${note}` : ""} · 配置已保存`;
+      render();
+    };
     box.className = "model-test-result pending";
     box.textContent = "正在发一次最小请求…";
     const started = Date.now();
     try {
-      const reply = await postChat(config, [{ role: "user", content: "只回复两个字：收到" }], { timeout: 20000, maxTokens: 16 });
-      const ms = Date.now() - started;
-      saveModelConfig(config);
-      box.className = "model-test-result ok";
-      box.textContent = `连接成功 · ${ms} ms · 模型回："${text(reply).trim().slice(0, 24)}" · 配置已保存`;
-      render();
-    } catch (error) {
+      const reply = await postChat(config, probe, { timeout: 20000, maxTokens: 16 });
+      showOk(reply, Date.now() - started, "");
+      return;
+    } catch (firstError) {
+      const kind = firstError.modelDetails?.kind;
+      const fixedEndpoint = chatCompletionsEndpoint(config.endpoint);
+      if ((kind === "html" || kind === "empty") && fixedEndpoint && fixedEndpoint !== config.endpoint) {
+        box.textContent = "第一次拿到的是网页而不是 JSON，正在按 /chat/completions 补全地址重试…";
+        try {
+          const reply = await postChat({ ...config, endpoint: fixedEndpoint }, probe, { timeout: 15000, maxTokens: 16 });
+          endpointInput.value = fixedEndpoint;
+          config.endpoint = fixedEndpoint;
+          showOk(reply, Date.now() - started, `已自动补全接口地址为 ${fixedEndpoint}`);
+        } catch (secondError) {
+          box.className = "model-test-result error";
+          box.textContent = `连接失败：${describeFetchError(firstError)}\n补全为 ${fixedEndpoint} 重试仍失败：${tidy(describeFetchError(secondError, true))}。当前仍会使用本地规则拆解。`;
+        }
+        return;
+      }
       box.className = "model-test-result error";
-      box.textContent = `连接失败：${describeFetchError(error)}。当前仍会使用本地规则拆解。`;
+      box.textContent = `连接失败：${tidy(describeFetchError(firstError))}。当前仍会使用本地规则拆解。`;
     }
   }
 
