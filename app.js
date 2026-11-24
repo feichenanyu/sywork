@@ -1060,29 +1060,66 @@
     return error;
   }
 
-  function chatCompletionsEndpoint(endpoint) {
-    const raw = text(endpoint).trim().replace(/\/+$/, "");
-    if (!raw || /\/chat\/completions$/i.test(raw)) return raw;
+  function isAnthropicEndpoint(endpoint) {
+    const raw = String(endpoint || "").trim();
+    if (!raw) return false;
+    return /api\.anthropic\.com/i.test(raw) || /\/v1\/messages$/i.test(raw);
+  }
+
+  function normalizeModelEndpoint(endpoint) {
+    const raw = String(endpoint || "").trim().replace(/\/+$/, "");
+    if (!raw) return raw;
+    if (/\/(chat\/completions|messages)$/i.test(raw)) return raw;
+    if (/api\.anthropic\.com/i.test(raw)) {
+      return /\/v1$/i.test(raw) ? `${raw}/messages` : `${raw}/v1/messages`;
+    }
     return `${raw}/chat/completions`;
+  }
+
+  function anthropicContent(data) {
+    const blocks = Array.isArray(data?.content) ? data.content : [];
+    return blocks.filter(block => block?.type === "text").map(block => text(block?.text)).join("");
   }
 
   async function postChat(config, messages, { timeout = 30000, maxTokens } = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
+    const anthropic = isAnthropicEndpoint(config.endpoint);
+    let headers;
+    let payload;
+    if (anthropic) {
+      const systemParts = messages.filter(item => item.role === "system").map(item => item.content).join("\n");
+      headers = {
+        "Content-Type": "application/json",
+        "x-api-key": config.apiKey || "",
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      };
+      payload = {
+        model: config.model,
+        max_tokens: maxTokens || 1024,
+        temperature: 0.2,
+        ...(systemParts ? { system: systemParts } : {}),
+        messages: messages.filter(item => item.role !== "system")
+      };
+    } else {
+      headers = {
+        "Content-Type": "application/json",
+        ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {})
+      };
+      payload = {
+        model: config.model,
+        temperature: 0.2,
+        ...(maxTokens ? { max_tokens: maxTokens } : {}),
+        messages
+      };
+    }
     let response;
     try {
       response = await fetch(config.endpoint, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {})
-        },
-        body: JSON.stringify({
-          model: config.model,
-          temperature: 0.2,
-          ...(maxTokens ? { max_tokens: maxTokens } : {}),
-          messages
-        }),
+        headers,
+        body: JSON.stringify(payload),
         signal: controller.signal
       });
     } finally {
@@ -1115,9 +1152,12 @@
     catch (error) {
       throw modelRequestError("接口返回内容不是合法 JSON", { ...details, kind: "json" });
     }
-    const content = data?.choices?.[0]?.message?.content;
+    const content = anthropic ? anthropicContent(data) : data?.choices?.[0]?.message?.content;
     if (!content) {
-      throw modelRequestError("返回 JSON 缺少 choices[0].message.content", { ...details, kind: "shape" });
+      throw modelRequestError(
+        anthropic ? "返回 JSON 缺少 content 文本块" : "返回 JSON 缺少 choices[0].message.content",
+        { ...details, kind: "shape" }
+      );
     }
     return content;
   }
@@ -1357,7 +1397,7 @@
     const lines = [];
     if (d.kind === "html") {
       lines.push("接口返回的是 HTML 网页，不是模型接口的 JSON —— 请求打到了一个页面，而不是 API。");
-      if (!brief) lines.push("常见原因：① 接口地址填成了网站首页或后台地址，缺少 /chat/completions；② 被登录页、SSO 或网关拦截后跳转；③ 路径写错，服务端返回了 404 页面。");
+      if (!brief) lines.push("常见原因：① 接口地址填成了网站首页或后台地址，缺少 API 路径（OpenAI 兼容为 /chat/completions，Claude 为 /v1/messages）；② 被登录页、SSO 或网关拦截后跳转；③ 路径写错，服务端返回了 404 页面。");
     } else if (d.kind === "json") {
       lines.push("接口返回的不是合法 JSON，可能经过了代理或被替换成报错内容。");
     } else if (d.kind === "http") {
@@ -1365,7 +1405,7 @@
     } else if (d.kind === "empty") {
       lines.push("接口返回了空内容，可能是网关拦截或请求方式不被支持。");
     } else if (d.kind === "shape") {
-      lines.push("接口回了 JSON，但结构不是 OpenAI 兼容格式（缺少 choices[0].message.content）。");
+      lines.push("接口回了 JSON，但既不是 OpenAI 兼容结构（choices[0].message.content），也不是 Anthropic 结构（content 文本块）。");
     } else {
       lines.push(raw);
     }
@@ -1411,9 +1451,9 @@
       return;
     } catch (firstError) {
       const kind = firstError.modelDetails?.kind;
-      const fixedEndpoint = chatCompletionsEndpoint(config.endpoint);
+      const fixedEndpoint = normalizeModelEndpoint(config.endpoint);
       if ((kind === "html" || kind === "empty") && fixedEndpoint && fixedEndpoint !== config.endpoint) {
-        box.textContent = "第一次拿到的是网页而不是 JSON，正在按 /chat/completions 补全地址重试…";
+        box.textContent = "第一次拿到的是网页而不是 JSON，正在按对应 API 路径补全地址重试…";
         try {
           const reply = await postChat({ ...config, endpoint: fixedEndpoint }, probe, { timeout: 15000, maxTokens: 16 });
           endpointInput.value = fixedEndpoint;
