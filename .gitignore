@@ -1,0 +1,17 @@
+# 系统与编辑器杂项
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+
+# WorkBuddy 项目数据（含本地记忆与身份文件，不对外）
+.workbuddy/
+
+# 本地测试产物
+.test/
+.smoke/
+*.tmp
+
+# 依赖与构建产物（当前项目无，留作约定）
+node_modules/
+dist/

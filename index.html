@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="三院个人工作台：在一个页面管理工作、学习、自媒体、灵感、习惯与情绪。">
+  <title>三院 · 个人工作台</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <svg class="icon-library" aria-hidden="true">
+    <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M20 4C12 4 5 7 5 14c0 3 2 5 5 5 7 0 10-7 10-15Z"/><path d="M4 21c2-6 6-10 12-13"/></symbol>
+    <symbol id="i-overview" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+    <symbol id="i-project" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16M8 3v4M14 10v4M18 17v4"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/></symbol>
+    <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6M12 2v3"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 2h8l4 4v16H6V2Z"/><path d="M14 2v5h5M9 13h6M9 17h6"/></symbol>
+    <symbol id="i-table" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11M15 9v11M3 14h18"/></symbol>
+    <symbol id="i-work" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5c0-1 1-2 2-2h4c1 0 2 1 2 2v2M3 12h18M10 12v2h4v-2"/></symbol>
+    <symbol id="i-learning" viewBox="0 0 24 24"><path d="M4 5c3-1 6 0 8 2v14c-2-2-5-3-8-2V5ZM20 5c-3-1-6 0-8 2v14c2-2 5-3 8-2V5Z"/></symbol>
+    <symbol id="i-media" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4 20-7Z"/><path d="M22 2 11 13"/></symbol>
+    <symbol id="i-idea" viewBox="0 0 24 24"><path d="M9 18h6M10 22h4M8.5 15.5C7 14.4 6 12.6 6 10.5a6 6 0 0 1 12 0c0 2.1-1 3.9-2.5 5-.5.4-.5 1-.5 1.5H9c0-.5 0-1.1-.5-1.5Z"/></symbol>
+    <symbol id="i-habit" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></symbol>
+    <symbol id="i-mood" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 20h16"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m-5 5 5-5 5 5M4 20h16"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="m14 5 5 5M4 20l3.5-.5L20 7a1.4 1.4 0 0 0 0-2l-1-1a1.4 1.4 0 0 0-2 0L4.5 16.5 4 20Z"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.4 2.3c-.9.4-.9 1.2-.9 2.2M12 17h.01"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 5h16l-6 7v6l-4 2v-8L4 5Z"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24"><path d="M20 13 13 20 4 11V4h7l9 9Z"/><circle cx="8.5" cy="8.5" r="1"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.2 6.2l2.8 2.8M15 15l2.8 2.8M17.8 6.2 15 9M9 15l-2.8 2.8"/><circle cx="12" cy="12" r="2.4"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12 20 4l-6 16-3-6-7-2Z"/></symbol>
+    <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4"/></symbol>
+  </svg>
+
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar" aria-label="主导航">
+      <div class="brand">
+        <span class="brand-mark"><svg class="icon"><use href="#i-leaf"/></svg></span>
+        <span><strong>三院</strong><small>个人工作台</small></span>
+      </div>
+
+      <nav class="main-nav">
+        <p class="nav-label">我的空间</p>
+        <button class="nav-item active" data-view="overview"><svg class="icon"><use href="#i-overview"/></svg><span>今日总览</span></button>
+        <button class="nav-item" data-view="planning"><svg class="icon"><use href="#i-project"/></svg><span>项目规划</span><span class="nav-count" data-count="planning"></span></button>
+        <button class="nav-item" data-view="assistant"><svg class="icon"><use href="#i-spark"/></svg><span>AI 拆解</span></button>
+        <button class="nav-item" data-view="automation"><svg class="icon"><use href="#i-timer"/></svg><span>定时任务</span><span class="task-status-dot" id="automationNavStatus" title="任务状态"></span></button>
+        <button class="nav-item" data-view="work"><svg class="icon"><use href="#i-work"/></svg><span>工作</span><span class="nav-count" data-count="work"></span></button>
+        <button class="nav-item" data-view="learning"><svg class="icon"><use href="#i-learning"/></svg><span>学习</span></button>
+        <button class="nav-item" data-view="media"><svg class="icon"><use href="#i-media"/></svg><span>自媒体</span></button>
+        <button class="nav-item" data-view="ideas"><svg class="icon"><use href="#i-idea"/></svg><span>灵感</span></button>
+        <button class="nav-item" data-view="habits"><svg class="icon"><use href="#i-habit"/></svg><span>习惯</span></button>
+        <button class="nav-item" data-view="moods"><svg class="icon"><use href="#i-mood"/></svg><span>情绪记录</span></button>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <p class="nav-label">数据与帮助</p>
+        <button class="nav-item subtle" id="importBtn"><svg class="icon"><use href="#i-upload"/></svg><span>导入 JSON</span></button>
+        <button class="nav-item subtle" id="exportBtn"><svg class="icon"><use href="#i-download"/></svg><span>导出备份</span></button>
+        <button class="nav-item subtle" id="helpBtn"><svg class="icon"><use href="#i-help"/></svg><span>使用指南</span></button>
+        <div class="storage-note"><span class="status-dot"></span><span id="storageText">数据仅保存在此浏览器</span></div>
+      </div>
+    </aside>
+
+    <button class="sidebar-scrim" id="sidebarScrim" aria-label="关闭导航"></button>
+
+    <div class="main-shell">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="icon-btn mobile-menu" id="menuBtn" aria-label="打开导航"><svg class="icon"><use href="#i-menu"/></svg></button>
+          <div><p class="topbar-kicker" id="viewKicker">PERSONAL WORKSPACE</p><h1 id="viewTitle">今日总览</h1></div>
+        </div>
+        <div class="topbar-actions">
+          <div class="today-label"><svg class="icon"><use href="#i-calendar"/></svg><span id="todayText"></span></div>
+          <button class="icon-btn notification-btn" id="reminderBtn" aria-label="查看今日工作提醒" title="今日工作提醒"><svg class="icon"><use href="#i-bell"/></svg><span id="reminderBadge"></span></button>
+          <button class="btn btn-primary" id="addBtn"><svg class="icon"><use href="#i-plus"/></svg><span>快速新增</span></button>
+        </div>
+      </header>
+
+      <main class="main-content" id="appMain" tabindex="-1">
+        <div class="loading-state" role="status"><span class="loading-spinner"></span><p>正在整理你的工作台…</p></div>
+      </main>
+    </div>
+  </div>
+
+  <input type="file" id="fileInput" accept="application/json,.json" hidden>
+  <input type="file" id="assistantFileInput" accept=".xlsx,.csv,.tsv,.txt" hidden>
+
+  <dialog class="modal record-modal" id="recordDialog" aria-labelledby="recordDialogTitle">
+    <form id="recordForm">
+      <div class="modal-header">
+        <div><p class="eyebrow" id="recordDialogEyebrow">NEW RECORD</p><h2 id="recordDialogTitle">新增记录</h2></div>
+        <button type="button" class="icon-btn" data-close="recordDialog" aria-label="关闭"><svg class="icon"><use href="#i-close"/></svg></button>
+      </div>
+      <div class="modal-body form-grid" id="recordFields"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close="recordDialog">取消</button>
+        <button type="submit" class="btn btn-primary"><svg class="icon"><use href="#i-check"/></svg>保存记录</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="modal quick-modal" id="quickDialog" aria-labelledby="quickTitle">
+    <div class="modal-header">
+      <div><p class="eyebrow">QUICK CAPTURE</p><h2 id="quickTitle">想记录什么？</h2><p class="modal-description">选择一个模块，马上留下此刻的进展或想法。</p></div>
+      <button class="icon-btn" data-close="quickDialog" aria-label="关闭"><svg class="icon"><use href="#i-close"/></svg></button>
+    </div>
+    <div class="quick-grid" id="quickGrid"></div>
+  </dialog>
+
+  <dialog class="modal planning-import-modal" id="planImportDialog" aria-labelledby="planImportTitle">
+    <div class="modal-header">
+      <div><p class="eyebrow">PRODUCT PLANNING IMPORT</p><h2 id="planImportTitle">导入产品规划</h2><p class="modal-description" id="planImportSubtitle">从表格到可执行任务，入库前每一步都可调整。</p></div>
+      <button class="icon-btn" data-close="planImportDialog" aria-label="关闭"><svg class="icon"><use href="#i-close"/></svg></button>
+    </div>
+    <div class="modal-body" id="planImportBody"></div>
+  </dialog>
+
+  <dialog class="modal t5t-report-modal" id="t5tReportDialog" aria-labelledby="t5tReportTitle">
+    <div class="modal-header">
+      <div><p class="eyebrow">T5T DAILY REPORT</p><h2 id="t5tReportTitle">T5T 工作日报</h2><p class="modal-description" id="t5tReportMeta"></p></div>
+      <button class="icon-btn" data-close="t5tReportDialog" aria-label="关闭"><svg class="icon"><use href="#i-close"/></svg></button>
+    </div>
+    <div class="modal-body t5t-report-body" id="t5tReportBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-close="t5tReportDialog">关闭</button>
+      <button class="btn btn-secondary" id="copyT5tBtn"><svg class="icon"><use href="#i-copy"/></svg>复制 Markdown</button>
+      <button class="btn btn-primary" id="exportT5tBtn"><svg class="icon"><use href="#i-download"/></svg>导出日报</button>
+    </div>
+  </dialog>
+
+  <dialog class="modal model-modal" id="modelDialog" aria-labelledby="modelTitle">
+    <form id="modelForm">
+      <div class="modal-header">
+        <div><p class="eyebrow">MODEL CONNECTION</p><h2 id="modelTitle">接入大模型（可选）</h2><p class="modal-description">不填也能用：默认走本地规则拆解。填写后对话会先请求你指定的模型。</p></div>
+        <button type="button" class="icon-btn" data-close="modelDialog" aria-label="关闭"><svg class="icon"><use href="#i-close"/></svg></button>
+      </div>
+      <div class="modal-body form-grid">
+        <div class="form-field full"><label for="modelEndpoint">接口地址（OpenAI 兼容 chat/completions）</label><input id="modelEndpoint" type="url" placeholder="https://api.openai.com/v1/chat/completions" autocomplete="off"></div>
+        <div class="form-field"><label for="modelName">模型名称</label><input id="modelName" type="text" placeholder="例如 gpt-4o-mini / deepseek-chat" autocomplete="off"></div>
+        <div class="form-field"><label for="modelKey">API Key</label><input id="modelKey" type="password" placeholder="sk-..." autocomplete="off"></div>
+        <p class="field-note full">密钥仅保存在本机浏览器 localStorage，不写入 JSON 备份、不随导出文件外传。浏览器直连第三方接口受对方 CORS 策略限制，调用失败会自动回退本地规则并明确提示。</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="modelClearBtn">清除配置</button>
+        <button type="submit" class="btn btn-primary"><svg class="icon"><use href="#i-check"/></svg>保存配置</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="modal confirm-modal" id="confirmDialog" aria-labelledby="confirmTitle">
+    <div class="confirm-icon"><svg class="icon"><use href="#i-trash"/></svg></div>
+    <h2 id="confirmTitle">确认操作</h2>
+    <p id="confirmMessage"></p>
+    <div class="modal-footer centered">
+      <button class="btn btn-secondary" id="confirmCancel">取消</button>
+      <button class="btn btn-danger" id="confirmOk">确认</button>
+    </div>
+  </dialog>
+
+  <dialog class="modal help-modal" id="helpDialog" aria-labelledby="helpTitle">
+    <div class="modal-header">
+      <div><p class="eyebrow">GETTING STARTED</p><h2 id="helpTitle">使用指南与验收清单</h2></div>
+      <button class="icon-btn" data-close="helpDialog" aria-label="关闭"><svg class="icon"><use href="#i-close"/></svg></button>
+    </div>
+    <div class="modal-body help-content">
+      <section><h3>运行说明</h3><ol><li>直接双击项目目录中的 <code>index.html</code>，即可在浏览器使用。</li><li>也可在该目录运行 <code>python -m http.server 8080</code>，再访问 <code>http://localhost:8080</code>；使用本地服务更利于开启系统通知。</li><li>在“项目规划”中可导入 XLSX / CSV / TSV，或直接粘贴 Excel 单元格；旧版 XLS 请先另存为 XLSX / CSV。</li><li>在“AI 拆解”中直接输入规划或上传任务表，生成预览后点“加入工作台”；默认使用本地规则，可在“模型设置”里接入自己的模型接口。</li><li>数据默认写入当前浏览器的 localStorage；清除浏览器数据前请先导出 JSON 备份。品牌已统一为“三院”，旧数据会自动迁移，不会丢失。</li></ol></section>
+      <section><h3>验收清单</h3><div class="checklist">
+        <label><input type="checkbox"> 首次打开显示六个模块的示例数据与动态统计。</label>
+        <label><input type="checkbox"> 可导入 XLSX/CSV 或粘贴表格，自动识别列并预览拆解任务。</label>
+        <label><input type="checkbox"> 十阶段 SOP 包含评审 48h 对齐、周一上线和两周复盘。</label>
+        <label><input type="checkbox"> 项目甘特图随任务日期、状态和筛选条件更新。</label>
+        <label><input type="checkbox"> 今日提醒按逾期、今日到期、今日启动和临期排序。</label>
+        <label><input type="checkbox"> 工作台内可启停每日 T5T，并手动生成、查看和导出日报。</label>
+        <label><input type="checkbox"> AI 拆解可输入一句话或上传表格，预览后加入工作台且不重复写入。</label>
+        <label><input type="checkbox"> 未配置模型时标注“本地规则”；模型失败会提示并自动回退。</label>
+        <label><input type="checkbox"> 各模块均可新增、编辑、删除，删除前有二次确认。</label>
+        <label><input type="checkbox"> 工作/学习/内容/灵感/情绪可勾选，习惯可按日打卡。</label>
+        <label><input type="checkbox"> 搜索、状态筛选、排序与清空筛选正常。</label>
+        <label><input type="checkbox"> 修改记录后统计卡、图表和导航数量同步更新。</label>
+        <label><input type="checkbox"> 刷新页面数据仍在，导出文件可重新导入。</label>
+        <label><input type="checkbox"> 无记录和无搜索结果时显示空状态。</label>
+        <label><input type="checkbox"> 窄屏下导航可收起，表单与卡片不横向溢出。</label>
+      </div></section>
+      <button class="text-btn" id="resetSampleBtn"><svg class="icon"><use href="#i-reset"/></svg>恢复示例数据</button>
+    </div>
+  </dialog>
+
+  <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
+  <script src="spreadsheet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
