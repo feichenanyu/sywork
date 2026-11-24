@@ -185,7 +185,7 @@ python -m http.server 8080
 - 仓库：<https://github.com/feichenanyu/sywork>（公开，默认分支 `main`）
 - 线上：<https://feichenanyu.github.io/sywork/>
 
-`.github/workflows/pages.yml` 在 push 到 `main` 时自动构建并发布，采用 GitHub 官方组合：`configure-pages@v5` → `upload-pages-artifact@v3`（发布仓库根目录）→ `deploy-pages@v5`。`enablement` 由仓库的 Pages 设置决定，流水线不改写 Pages 来源。
+`.github/workflows/pages.yml` 在 push 到 `main` 时自动构建并发布，采用 GitHub 官方组合：`configure-pages@v5` → `upload-pages-artifact@v3` → `deploy-pages@v5`。流水线先 `Stage site files`，把 `index.html`、`styles.css`、`app.js`、`spreadsheet.js`、`.nojekyll` 五个站点文件复制到 `_site/`，只上传这个小目录并显式命名 artifact 为 `github-pages`（`retention-days: 1`）。直接上传整个仓库根目录时曾偶发 `No artifacts named "github-pages"` 的索引竞态，缩小上传内容后部署恢复稳定。`enablement` 由仓库的 Pages 设置决定，流水线不改写 Pages 来源。
 
 本地改动后同步：
 
