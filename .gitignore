@@ -15,3 +15,6 @@ desktop.ini
 # 依赖与构建产物（当前项目无，留作约定）
 node_modules/
 dist/
+
+# 手动上传用的副本目录
+deploy/
