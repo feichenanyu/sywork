@@ -178,6 +178,26 @@ python -m http.server 8080
 - [ ] 模型 API Key 不出现在导出的 JSON 备份里。
 - [ ] 旧版「青禾」数据自动迁移到新 localStorage 键，记录不丢失。
 - [ ] 全部操作无需网络（可选模型调用除外），页面无外部字体、图表库或 CDN 依赖。
+- [ ] push 到 main 后 Pages 自动部署成功，线上页面包含最新改动。
+
+## 部署到 GitHub Pages
+
+- 仓库：<https://github.com/feichenanyu/sywork>（公开，默认分支 `main`）
+- 线上：<https://feichenanyu.github.io/sywork/>
+
+`.github/workflows/pages.yml` 在 push 到 `main` 时自动构建并发布，采用 GitHub 官方组合：`configure-pages@v5` → `upload-pages-artifact@v3`（发布仓库根目录）→ `deploy-pages@v5`。`enablement` 由仓库的 Pages 设置决定，流水线不改写 Pages 来源。
+
+本地改动后同步：
+
+```bash
+git add -A
+git commit -m "说明改了什么"
+git push origin main
+```
+
+推送后约 1 分钟 Actions 跑完，线上即更新。可在仓库 Actions 页查看 `Deploy static site to GitHub Pages` 的运行结果。
+
+> **配置与数据按来源隔离**：模型配置（endpoint / model / API Key）和六模块记录都存浏览器 `localStorage`，`file://` 本地打开、WorkBuddy 预览面板、`github.io` 线上三者互不相通。线上首次使用需要在该页面重新配置模型；本地录入的记录也不会出现在线上。
 
 ## 文件说明
 
@@ -185,6 +205,7 @@ python -m http.server 8080
 - `styles.css`：设计变量、卡片、甘特图、提醒、表格预览、表单和响应式布局。
 - `app.js`：十阶段拆解规则、AI 对话拆解、CRUD、筛选、统计、图表、T5T 定时任务、提醒、本地保存及 JSON 导入导出。
 - `spreadsheet.js`：本地 XLSX ZIP/XML 与 CSV/TSV 解析器。
+- `.github/workflows/pages.yml`：push 到 main 自动部署到 GitHub Pages。
 - `preview.png` / `preview-mobile.png` / `preview-planning.png` / `preview-automation.png` / `preview-automation-mobile.png` / `preview-assistant.png` / `preview-assistant-welcome.png` / `preview-assistant-mobile.png`：桌面、窄屏、项目规划、定时任务、AI 拆解空状态与拆解结果页预览图。
 
 ## 设计检查与验证
