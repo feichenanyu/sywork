@@ -1499,7 +1499,7 @@
       }
     }
     box.className = "model-test-result error";
-    box.textContent = `连接失败：${tidy(describeFetchError(firstError))}。${triedMore ? "已自动尝试补全路径并切换 OpenAI 兼容 / Anthropic 原生两种格式，均未连通。" : ""}当前仍会使用本地规则拆解。`;
+    box.textContent = `连接失败：${tidy(describeFetchError(firstError))}。\n尝试过的地址：\n${attempts.map(item => item.endpoint).join("\n")}\n${triedMore ? "已自动尝试补全路径并切换 OpenAI 兼容 / Anthropic 原生两种格式，均未连通。" : ""}当前仍会使用本地规则拆解。`;
   }
 
   function openModelDialog() {
