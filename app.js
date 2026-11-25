@@ -1079,12 +1079,9 @@
   function normalizeWithStyle(endpoint, style) {
     const raw = String(endpoint || "").trim().replace(/\/+$/, "");
     if (!raw) return raw;
-    if (style === "anthropic") {
-      if (/\/v1\/messages$/i.test(raw)) return raw;
-      return /\/v1$/i.test(raw) ? `${raw}/messages` : `${raw}/v1/messages`;
-    }
-    if (/\/chat\/completions$/i.test(raw)) return raw;
-    return `${raw}/chat/completions`;
+    // 先剥掉已有的 API 路径后缀（/chat/completions、/v1/messages、末尾 /v1），再按目标格式补全
+    const base = raw.replace(/\/(v1\/)?(?:chat\/completions|messages)$/i, "").replace(/\/v1$/i, "");
+    return style === "anthropic" ? `${base}/v1/messages` : `${base}/v1/chat/completions`;
   }
 
   function normalizeModelEndpoint(endpoint) {
@@ -1485,21 +1482,28 @@
     box.className = "model-test-result pending";
     box.textContent = "正在发一次最小请求…";
     const started = Date.now();
-    let firstError = null;
-    let triedMore = false;
+    const results = [];
     for (const attempt of attempts) {
+      box.textContent = attempt === attempts[0]
+        ? "正在发一次最小请求…"
+        : `正在按 ${styleLabel(attempt.style)} 尝试 ${attempt.endpoint}…`;
       try {
         const reply = await postChat({ ...base, endpoint: attempt.endpoint, style: attempt.style }, probe, { timeout: attempt === attempts[0] ? 20000 : 15000, maxTokens: 16 });
         showOk(attempt, reply, Date.now() - started);
         return;
       } catch (error) {
-        if (!firstError) firstError = error;
-        if (error.name === "AbortError" || /Failed to fetch|NetworkError|Load failed/i.test(text(error.message))) break;
-        triedMore = true;
+        results.push({ attempt, error });
+        if (error.name === "AbortError") break;
+        // CORS 拦截（Failed to fetch）只影响当前地址，继续尝试下一个
       }
     }
     box.className = "model-test-result error";
-    box.textContent = `连接失败：${tidy(describeFetchError(firstError))}。\n尝试过的地址：\n${attempts.map(item => item.endpoint).join("\n")}\n${triedMore ? "已自动尝试补全路径并切换 OpenAI 兼容 / Anthropic 原生两种格式，均未连通。" : ""}当前仍会使用本地规则拆解。`;
+    const lines = results.map(({ attempt, error }) => {
+      const d = error.modelDetails;
+      const status = d && d.status ? `（HTTP ${d.status}）` : "";
+      return `- ${attempt.endpoint} → ${tidy(describeFetchError(error, true))}${status}`;
+    });
+    box.textContent = `连接失败，各地址实际返回：\n${lines.join("\n")}\n都返回网页，说明地址打到了网站页面（核对 API 域名，注意 api. 前缀）；返回 401/403 则核对 API Key 与模型名。当前仍会使用本地规则拆解。`;
   }
 
   function openModelDialog() {
