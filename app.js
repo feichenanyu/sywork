@@ -744,18 +744,28 @@
   function loadModelConfig() {
     try {
       const raw = localStorage.getItem(ASSISTANT_MODEL_KEY);
-      if (!raw) return { endpoint: "", model: "", apiKey: "" };
+      if (!raw) return { endpoint: "", model: "", apiKey: "", style: "" };
       const parsed = JSON.parse(raw) || {};
-      return { endpoint: text(parsed.endpoint), model: text(parsed.model), apiKey: text(parsed.apiKey) };
+      return {
+        endpoint: text(parsed.endpoint),
+        model: text(parsed.model),
+        apiKey: text(parsed.apiKey),
+        style: ["anthropic", "openai"].includes(parsed.style) ? parsed.style : ""
+      };
     } catch (error) {
-      return { endpoint: "", model: "", apiKey: "" };
+      return { endpoint: "", model: "", apiKey: "", style: "" };
     }
   }
 
   function saveModelConfig(config) {
     try {
       if (!config.endpoint && !config.model && !config.apiKey) localStorage.removeItem(ASSISTANT_MODEL_KEY);
-      else localStorage.setItem(ASSISTANT_MODEL_KEY, JSON.stringify(config));
+      else localStorage.setItem(ASSISTANT_MODEL_KEY, JSON.stringify({
+        endpoint: text(config.endpoint),
+        model: text(config.model),
+        apiKey: text(config.apiKey),
+        style: ["anthropic", "openai"].includes(config.style) ? config.style : ""
+      }));
     } catch (error) { /* localStorage 不可用时静默降级 */ }
   }
 
@@ -1066,14 +1076,25 @@
     return /api\.anthropic\.com/i.test(raw) || /\/v1\/messages$/i.test(raw);
   }
 
-  function normalizeModelEndpoint(endpoint) {
+  function normalizeWithStyle(endpoint, style) {
     const raw = String(endpoint || "").trim().replace(/\/+$/, "");
     if (!raw) return raw;
-    if (/\/(chat\/completions|messages)$/i.test(raw)) return raw;
-    if (/api\.anthropic\.com/i.test(raw)) {
+    if (style === "anthropic") {
+      if (/\/v1\/messages$/i.test(raw)) return raw;
       return /\/v1$/i.test(raw) ? `${raw}/messages` : `${raw}/v1/messages`;
     }
+    if (/\/chat\/completions$/i.test(raw)) return raw;
     return `${raw}/chat/completions`;
+  }
+
+  function normalizeModelEndpoint(endpoint) {
+    return normalizeWithStyle(endpoint, isAnthropicEndpoint(endpoint) ? "anthropic" : "openai");
+  }
+
+  function resolveStyle(config) {
+    if (config.style === "anthropic") return "anthropic";
+    if (config.style === "openai") return "openai";
+    return isAnthropicEndpoint(config.endpoint) ? "anthropic" : "openai";
   }
 
   function anthropicContent(data) {
@@ -1084,7 +1105,7 @@
   async function postChat(config, messages, { timeout = 30000, maxTokens } = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
-    const anthropic = isAnthropicEndpoint(config.endpoint);
+    const anthropic = resolveStyle(config) === "anthropic";
     let headers;
     let payload;
     if (anthropic) {
@@ -1424,50 +1445,61 @@
     const box = document.getElementById("modelTestResult");
     const endpointInput = document.getElementById("modelEndpoint");
     if (!box || !endpointInput) return;
-    const config = {
+    const base = {
       endpoint: endpointInput.value.trim(),
       model: document.getElementById("modelName").value.trim(),
-      apiKey: document.getElementById("modelKey").value.trim()
+      apiKey: document.getElementById("modelKey").value.trim(),
+      style: loadModelConfig().style
     };
-    if (!config.endpoint || !config.model) {
+    if (!base.endpoint || !base.model) {
       box.className = "model-test-result error";
       box.textContent = "先把接口地址和模型名称填上，再测。";
       return;
     }
     const probe = [{ role: "user", content: "只回复两个字：收到" }];
     const tidy = value => text(value).replace(/[。.！!；;]\s*$/, "");
-    const showOk = (reply, ms, note) => {
-      saveModelConfig(config);
+    const styleLabel = style => style === "anthropic" ? "Anthropic 原生（/v1/messages）" : "OpenAI 兼容（/chat/completions）";
+    // 依次尝试：填写的原始地址 → 按地址特征补全路径 → 切换另一种接口格式
+    const judgeStyle = isAnthropicEndpoint(base.endpoint) ? "anthropic" : "openai";
+    const attempts = [{ style: judgeStyle, endpoint: base.endpoint, note: "" }];
+    for (const style of [judgeStyle, judgeStyle === "anthropic" ? "openai" : "anthropic"]) {
+      const endpoint = normalizeWithStyle(base.endpoint, style);
+      if (endpoint && !attempts.some(item => item.endpoint === endpoint)) {
+        attempts.push({
+          style,
+          endpoint,
+          note: endpoint !== base.endpoint
+            ? (style === judgeStyle ? `已自动补全接口路径 · 实际接口地址：${endpoint}` : `已自动切换接口格式重试 · 实际接口地址：${endpoint}`)
+            : `已自动切换接口格式重试`
+        });
+      }
+    }
+    const showOk = (attempt, reply, ms) => {
+      const finalConfig = { ...base, endpoint: attempt.endpoint, style: attempt.style };
+      saveModelConfig(finalConfig);
+      endpointInput.value = attempt.endpoint;
       box.className = "model-test-result ok";
-      box.textContent = `连接成功 · ${ms} ms · 模型回："${text(reply).trim().slice(0, 24)}"${note ? ` · ${note}` : ""} · 配置已保存`;
+      box.textContent = `连接成功 · ${ms} ms · 模型回："${text(reply).trim().slice(0, 24)}" · 接口格式：${styleLabel(attempt.style)}${attempt.note ? ` · ${attempt.note}` : ""} · 配置已保存`;
       render();
     };
     box.className = "model-test-result pending";
     box.textContent = "正在发一次最小请求…";
     const started = Date.now();
-    try {
-      const reply = await postChat(config, probe, { timeout: 20000, maxTokens: 16 });
-      showOk(reply, Date.now() - started, "");
-      return;
-    } catch (firstError) {
-      const kind = firstError.modelDetails?.kind;
-      const fixedEndpoint = normalizeModelEndpoint(config.endpoint);
-      if ((kind === "html" || kind === "empty") && fixedEndpoint && fixedEndpoint !== config.endpoint) {
-        box.textContent = "第一次拿到的是网页而不是 JSON，正在按对应 API 路径补全地址重试…";
-        try {
-          const reply = await postChat({ ...config, endpoint: fixedEndpoint }, probe, { timeout: 15000, maxTokens: 16 });
-          endpointInput.value = fixedEndpoint;
-          config.endpoint = fixedEndpoint;
-          showOk(reply, Date.now() - started, `已自动补全接口地址为 ${fixedEndpoint}`);
-        } catch (secondError) {
-          box.className = "model-test-result error";
-          box.textContent = `连接失败：${describeFetchError(firstError)}\n补全为 ${fixedEndpoint} 重试仍失败：${tidy(describeFetchError(secondError, true))}。当前仍会使用本地规则拆解。`;
-        }
+    let firstError = null;
+    let triedMore = false;
+    for (const attempt of attempts) {
+      try {
+        const reply = await postChat({ ...base, endpoint: attempt.endpoint, style: attempt.style }, probe, { timeout: attempt === attempts[0] ? 20000 : 15000, maxTokens: 16 });
+        showOk(attempt, reply, Date.now() - started);
         return;
+      } catch (error) {
+        if (!firstError) firstError = error;
+        if (error.name === "AbortError" || /Failed to fetch|NetworkError|Load failed/i.test(text(error.message))) break;
+        triedMore = true;
       }
-      box.className = "model-test-result error";
-      box.textContent = `连接失败：${tidy(describeFetchError(firstError))}。当前仍会使用本地规则拆解。`;
     }
+    box.className = "model-test-result error";
+    box.textContent = `连接失败：${tidy(describeFetchError(firstError))}。${triedMore ? "已自动尝试补全路径并切换 OpenAI 兼容 / Anthropic 原生两种格式，均未连通。" : ""}当前仍会使用本地规则拆解。`;
   }
 
   function openModelDialog() {
@@ -1477,9 +1509,10 @@
     document.getElementById("modelKey").value = config.apiKey || "";
     const box = document.getElementById("modelTestResult");
     if (box) {
+      const styleName = config.style === "anthropic" ? "Anthropic 原生" : config.style === "openai" ? "OpenAI 兼容" : "";
       box.className = "model-test-result";
       box.textContent = config.endpoint && config.model
-        ? `当前已保存：${config.model}。想确认真的通，点「测试连接」。`
+        ? `当前已保存：${config.model}${styleName ? `（${styleName}格式）` : ""}。想确认真的通，点「测试连接」。`
         : "还没配置。点一下「测试连接」会真发一次最小请求，直接看通不通。";
     }
     document.getElementById("modelDialog").showModal();

@@ -106,6 +106,7 @@ python -m http.server 8080
 - **可选接入大模型**：在「模型设置」里填模型名和 API Key，支持两类接口，按地址自动识别：
   - **Anthropic 官方 API（Claude）**：填 `https://api.anthropic.com/v1/messages`（只填域名会自动补全路径），走 `x-api-key` 鉴权，请求自动转换 `system` 与必填的 `max_tokens`，并携带 `anthropic-dangerous-direct-browser-access` 允许浏览器直连。
   - **OpenAI 兼容接口**：填完整的 `chat/completions` 地址，走 `Bearer` 鉴权。
+  - **第三方中转站**（New API 等）：只填域名（如 `https://api.geziapi.com`）也可以。「测试连接」会自动补全路径，并在 OpenAI 兼容 / Anthropic 原生两种格式间依次探测，成功后记住实际生效的地址与格式；对话拆解直接按已确认的格式请求。
   - 配置成功后对话会先请求模型，要求模型返回结构化任务条目；模型结果再送入同一套十阶段规则展开。
 - **失败自动回退**：接口不通、CORS 拒绝、超时 30 秒或返回格式不对时，会显示明确的错误提示，并自动改用本地规则继续拆解，不会卡住对话。地址缺路径时，「测试连接」会自动按 `/chat/completions` 补全重试一次，补全成功会把新地址写回输入框并保存。
 - **密钥安全**：模型配置只存在浏览器 `localStorage` 的独立键 `sanyuan.assistant.model.v1` 中，**不写入工作台数据、不进入 JSON 备份、不随导出文件外传**。清除浏览器数据会一并清除。

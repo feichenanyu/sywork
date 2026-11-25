@@ -155,7 +155,7 @@
         <div class="form-field full"><label for="modelEndpoint">接口地址（Anthropic messages 或 OpenAI chat/completions）</label><input id="modelEndpoint" type="url" placeholder="https://api.anthropic.com/v1/messages 或 https://api.openai.com/v1/chat/completions" autocomplete="off"></div>
         <div class="form-field"><label for="modelName">模型名称</label><input id="modelName" type="text" placeholder="例如 gpt-4o-mini / deepseek-chat" autocomplete="off"></div>
         <div class="form-field"><label for="modelKey">API Key</label><input id="modelKey" type="password" placeholder="sk-..." autocomplete="off"></div>
-        <p class="field-note full">支持两类接口，地址填完整即可自动识别：Anthropic 官方 API 填 https://api.anthropic.com/v1/messages（可只填域名，会自动补全，用 x-api-key 鉴权）；OpenAI 兼容接口填完整的 chat/completions 地址（用 Bearer 鉴权）。不要填网站首页或后台地址。若提示「返回 HTML 网页」，通常是地址缺路径、被登录页或网关拦截，或接口不允许浏览器跨域直连；测试连接会自动尝试补全路径。密钥仅保存在本机浏览器 localStorage，不写入 JSON 备份、不随导出文件外传；调用失败会自动回退本地规则并明确提示。</p>
+        <p class="field-note full">支持两类接口，地址填完整即可自动识别：Anthropic 官方 API 填 https://api.anthropic.com/v1/messages（可只填域名，会自动补全，用 x-api-key 鉴权）；OpenAI 兼容接口填完整的 chat/completions 地址（用 Bearer 鉴权）。第三方中转站只填域名也可以，测试连接会自动补全路径，并在 OpenAI 兼容 / Anthropic 原生两种格式间探测，成功后记住实际生效的地址与格式。不要填网站首页或后台地址。若提示「返回 HTML 网页」，通常是地址缺路径、被登录页或网关拦截，或接口不允许浏览器跨域直连。密钥仅保存在本机浏览器 localStorage，不写入 JSON 备份、不随导出文件外传；调用失败会自动回退本地规则并明确提示。</p>
         <div class="model-test full"><button type="button" class="btn btn-secondary btn-small" id="modelTestBtn"><svg class="icon"><use href="#i-cpu"/></svg>测试连接</button><span class="model-test-result" id="modelTestResult">还没测过。点一下会真发一次最小请求，直接看通不通。</span></div>
       </div>
       <div class="modal-footer">
