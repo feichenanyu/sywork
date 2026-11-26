@@ -1077,8 +1077,12 @@
   }
 
   function normalizeWithStyle(endpoint, style) {
-    const raw = String(endpoint || "").trim().replace(/\/+$/, "");
-    if (!raw) return raw;
+    const raw0 = String(endpoint || "").trim().replace(/\/+$/, "");
+    if (!raw0) return raw0;
+    // 压缩协议头之外的连续斜杠（如 //proxy/），避免转发路径畸形；https:// 中的 // 不受影响
+    const m = raw0.match(/^[a-z][a-z0-9+.-]*:\/\//i);
+    const prefix = m ? m[0] : "";
+    const raw = prefix + raw0.slice(prefix.length).replace(/([^:])\/{2,}/g, "$1/");
     // 先剥掉已有的 API 路径后缀（/chat/completions、/v1/messages、末尾 /v1），再按目标格式补全
     const base = raw.replace(/\/(v1\/)?(?:chat\/completions|messages)$/i, "").replace(/\/v1$/i, "");
     return style === "anthropic" ? `${base}/v1/messages` : `${base}/v1/chat/completions`;
