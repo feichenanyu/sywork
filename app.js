@@ -1500,8 +1500,11 @@
     box.className = "model-test-result error";
     const lines = results.map(({ attempt, error }) => {
       const d = error.modelDetails;
-      const status = d && d.status ? `（HTTP ${d.status}）` : "";
-      return `- ${attempt.endpoint} → ${tidy(describeFetchError(error, true))}${status}`;
+      const facts = [];
+      if (d && d.status) facts.push(`HTTP ${d.status}`);
+      if (d && d.snippet) facts.push(`返回：${d.snippet.slice(0, 70)}`);
+      const suffix = facts.length ? `（${facts.join(" · ")}）` : "";
+      return `- ${attempt.endpoint} → ${tidy(describeFetchError(error, true))}${suffix}`;
     });
     box.textContent = `连接失败，各地址实际返回：\n${lines.join("\n")}\n都返回网页，说明地址打到了网站页面（核对 API 域名，注意 api. 前缀）；返回 401/403 则核对 API Key 与模型名。当前仍会使用本地规则拆解。`;
   }
