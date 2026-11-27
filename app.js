@@ -1427,6 +1427,34 @@
     return parts;
   }
 
+  // 贴链接自动读正文：抓取输入中的 URL，提取 HTML 正文拼进模型上下文（仅对允许跨域的站点生效，读不到不阻塞拆解）
+  async function fetchLinkContexts(input) {
+    const urls = [...new Set((text(input).match(/https?:\/\/[^\s<>"'（）「」【】《》，。；：？！、]+/gi) || []).map(url => url.replace(/[),.;:]+$/, "")))].slice(0, 3);
+    if (!urls.length) return { note: "", context: "" };
+    const parts = [];
+    const notes = [];
+    for (const url of urls) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 12000);
+        const response = await fetch(url, { signal: controller.signal });
+        clearTimeout(timer);
+        if (!response.ok) { notes.push(`${url} → HTTP ${response.status}`); continue; }
+        const html = await response.text();
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        doc.querySelectorAll("script, style, noscript, svg, iframe, nav, footer").forEach(el => el.remove());
+        const body = (doc.body?.textContent || "").replace(/\s+/g, " ").trim();
+        if (!body) { notes.push(`${url} → 页面没有可读正文`); continue; }
+        const taken = body.slice(0, 6000);
+        parts.push(`【链接正文】${url}\n${taken}`);
+        notes.push(`${url} → 已读取 ${taken.length} 字正文`);
+      } catch (error) {
+        notes.push(`${url} → 读取失败（对方站点不允许跨域或网络不可达）`);
+      }
+    }
+    return { note: notes.join("；"), context: parts.join("\n\n") };
+  }
+
   async function sendAssistantMessage(raw) {
     const input = text(raw).trim();
     if (!input) { showToast("先说一句要拆解的规划", "error"); return; }
@@ -1459,7 +1487,11 @@
       log?.appendChild(pending);
       if (log) log.scrollTop = log.scrollHeight;
       try {
-        const result = await requestModelDecomposition([...assistantHistoryForModel(), { role: "user", content: input }]);
+        // 输入里带了链接就先抓正文（读不到不阻塞），连同正文一起交给模型拆解
+        const { note: linkNote, context: linkContext } = await fetchLinkContexts(input);
+        if (linkNote) pushAssistantMessage({ role: "assistant", kind: "text", text: linkNote });
+        const lastContent = linkContext ? `${input}\n\n[以下是输入中链接的正文，供拆解参考]\n${linkContext}` : input;
+        const result = await requestModelDecomposition([...assistantHistoryForModel(), { role: "user", content: lastContent }]);
         const config = loadModelConfig();
         pending.remove();
         if (result.reply) pushAssistantMessage({ role: "assistant", kind: "text", text: result.reply });
