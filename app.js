@@ -733,11 +733,18 @@
   /* ==================== AI 对话拆解 ==================== */
 
   const ASSISTANT_MODEL_KEY = "sanyuan.assistant.model.v1";
-  const ASSISTANT_SYSTEM_PROMPT = [
-    "你是产品经理的任务拆解助手。用户会用自然语言或表格描述产品规划，你要抽取为结构化任务条目。",
+  // AI 直接拆解：模型一次性规划完整任务列表，本地只做格式校验，不套固定模板。
+  const AI_DIRECT_SYSTEM_PROMPT = [
+    "你是资深产品经理的 AI 规划搭档。用户会用自然语言描述规划、需求或事项，你直接产出一份可执行的完整任务列表。",
     "只输出一个 JSON 对象，不要输出解释文字、不要使用 markdown 代码块。",
-    "JSON 结构：{\"reply\":\"一句中文回复，说明你识别到了什么\",\"items\":[{\"title\":\"规划事项\",\"project\":\"项目名\",\"stage\":\"讨论调研|规划立项|决策评审|设计|研发协同|测试验收|上线发布|培训赋能|运营推广|复盘\",\"owner\":\"负责人\",\"priority\":\"high|medium|low\",\"startDate\":\"YYYY-MM-DD\",\"dueDate\":\"YYYY-MM-DD\"}]}",
-    "规则：items 至少 1 条；title 必填且不超过 40 字；日期必须是 YYYY-MM-DD；缺省字段用空字符串；不要编造不存在的项目或人名。",
+    "JSON 结构：{\"reply\":\"用两三句话说明你的规划思路和关键安排\",\"tasks\":[{\"title\":\"具体任务\",\"stage\":\"讨论调研|规划立项|决策评审|设计|研发协同|测试验收|上线发布|培训赋能|运营推广|复盘 或 空字符串\",\"project\":\"项目名\",\"owner\":\"负责人\",\"priority\":\"high|medium|low\",\"startDate\":\"YYYY-MM-DD\",\"dueDate\":\"YYYY-MM-DD\",\"estimate\":天数}]}",
+    "规划原则（按输入内容智能取舍，不要机械套用）：",
+    "1. 任务数量由内容决定：一句话小事项可能 1～3 条任务就够；大型项目才需要完整链路。不要生成与输入无关的填充任务，也不要漏掉用户明确提到的事项。",
+    "2. 阶段是标签不是骨架：用户提到的每个事项都要落到具体任务；stage 从给定枚举里选最贴切的一个，判断不了就用空字符串。",
+    "3. 结合用户的工作纪律安排日期：需求/设计评审通过后 48 小时内要有修改对齐动作；上线日期避开周五（顺延到下周一）；上线后两周内安排复盘；正式立项前如果有明显未知，先安排一次 30 分钟左右的用户/数据调研；上线前安排自测与验收报告，上线后安排操作说明与分层培训。",
+    "4. 日期都是真实日历日期（YYYY-MM-DD）。用户说「下周一」「本月底」时按今天日期推算；推算不了或用户没说就用空字符串，不要编造。",
+    "5. 项目名、负责人、优先级尊重用户输入；用户没说就留空字符串，不要编造。",
+    "6. 如果用户是对上一版任务列表提出调整（如「精简点」「详细点」「去掉测试环节」「增加合规审查」「按原样」），返回调整后的完整新列表：「按原样」表示只保留输入中明确提到的任务，不要扩展。",
     "今天的日期是"
   ].join("");
 
@@ -1060,6 +1067,30 @@
     };
   }
 
+  // AI 直接拆解：模型返回的就是最终任务，本地只做格式校验与字段对齐，不进模板展开
+  function normalizeModelTask(task, fallbackProject) {
+    const title = text(task.title || task.name).trim();
+    if (!title) return null;
+    const stage = LIFECYCLE_STAGES.includes(text(task.stage)) ? text(task.stage) : "";
+    const startDate = parseImportedDate(task.startDate) || offsetDate(0);
+    const dueDate = parseImportedDate(task.dueDate);
+    const estimate = Number(task.estimate);
+    return {
+      project: text(task.project).trim() || fallbackProject,
+      stage: stage || "规划立项",
+      owner: text(task.owner).trim(),
+      priority: ["high", "medium", "low"].includes(text(task.priority)) ? text(task.priority) : "medium",
+      status: "todo",
+      completed: false,
+      estimate: Number.isFinite(estimate) && estimate > 0 ? Math.round(estimate) : 2,
+      title,
+      startDate,
+      dueDate: dueDate && dueDate >= startDate ? dueDate : startDate,
+      tags: ["AI 拆解", stage || "规划立项"].filter(Boolean),
+      notes: "来源：AI 对话拆解（模型直接生成）"
+    };
+  }
+
   function looksLikeHtml(body) {
     return /^\s*(?:<!doctype\s+html|<html\b|<head\b|<body\b|<div\b|<title\b|<script\b)/i.test(body || "");
   }
@@ -1187,14 +1218,24 @@
   async function requestModelDecomposition(history) {
     const config = loadModelConfig();
     if (!config.endpoint || !config.model) throw new Error("尚未配置模型");
+    const weekday = parseLocalDate(chinaToday()).toLocaleDateString("zh-CN", { weekday: "long" });
     const content = await postChat(config, [
-      { role: "system", content: `${ASSISTANT_SYSTEM_PROMPT} ${chinaToday()}。` },
+      { role: "system", content: `${AI_DIRECT_SYSTEM_PROMPT} ${chinaToday()}（${weekday}）。` },
       ...history
     ]);
     const parsed = parseModelJson(content);
+    const reply = text(parsed.reply);
+    if (Array.isArray(parsed.tasks) && parsed.tasks.length) {
+      const lastUser = [...history].reverse().find(item => item.role === "user");
+      const fallbackProject = detectDefaultProject(text(lastUser?.content)) || `对话拆解 ${chinaToday()}`;
+      const tasks = parsed.tasks.map(task => normalizeModelTask(task, fallbackProject)).filter(Boolean);
+      if (!tasks.length) throw new Error("模型返回的任务列表没有可执行条目");
+      return { tasks, reply, direct: true };
+    }
+    // 兼容模型仍返回旧「条目」结构的情况：条目走本地十阶段展开
     const items = Array.isArray(parsed.items) ? parsed.items.map(normalizeModelItem).filter(item => item.title) : [];
-    if (!items.length) throw new Error("模型没有识别出任务条目");
-    return { items, reply: text(parsed.reply) };
+    if (items.length) return { items, reply, direct: false };
+    throw new Error("模型没有识别出任务");
   }
 
   // ---------- 消息与视图 ----------
@@ -1227,7 +1268,7 @@
     return `<article class="chat-preview">
       <header class="chat-preview-head"><span class="chat-preview-badge">${icon("spark")}${escapeHtml(message.engine || "拆解结果")}</span><span class="chat-preview-meta">${tasks.length} 项任务 · ${projects.length} 个项目</span></header>
       <div class="chat-preview-body"><table class="chat-task-table"><thead><tr><th>项目</th><th>任务</th><th>阶段</th><th>负责人</th><th>截止</th></tr></thead><tbody>${rows}</tbody></table>${more}</div>
-      <footer class="chat-preview-foot">${message.committed ? `<span class="chat-committed">${icon("check")}已加入工作台</span><button class="btn btn-secondary btn-small" data-action="assistant-goto">查看甘特图</button>` : `<div class="mode-switch" role="group" aria-label="拆解粒度">${[["full", "完整"], ["light", "精简"], ["original", "原样"]].map(([value, label]) => `<button type="button" data-action="assistant-mode" data-msg="${escapeHtml(message.id)}" data-mode="${value}" class="${(message.mode || "full") === value ? "active" : ""}" aria-pressed="${(message.mode || "full") === value}">${label}</button>`).join("")}</div><button class="btn btn-primary btn-small" data-action="assistant-commit" data-msg="${escapeHtml(message.id)}">${icon("check")}加入工作台</button>`}</footer>
+      <footer class="chat-preview-foot">${message.committed ? `<span class="chat-committed">${icon("check")}已加入工作台</span><button class="btn btn-secondary btn-small" data-action="assistant-goto">查看甘特图</button>` : `${Array.isArray(message.entries) && message.entries.length ? `<div class="mode-switch" role="group" aria-label="拆解粒度">${[["full", "完整"], ["light", "精简"], ["original", "原样"]].map(([value, label]) => `<button type="button" data-action="assistant-mode" data-msg="${escapeHtml(message.id)}" data-mode="${value}" class="${(message.mode || "full") === value ? "active" : ""}" aria-pressed="${(message.mode || "full") === value}">${label}</button>`).join("")}</div>` : `<span class="chat-ai-hint">${icon("spark")}AI 直接拆解 · 回复如「精简点」「去掉测试环节」可调整</span>`}<button class="btn btn-primary btn-small" data-action="assistant-commit" data-msg="${escapeHtml(message.id)}">${icon("check")}加入工作台</button>`}</footer>
     </article>`;
   }
 
@@ -1255,8 +1296,7 @@
     return `<div class="chat-welcome">
       <div class="chat-welcome-icon">${icon("spark")}</div>
       <h3>把规划表或一句话丢进来，我拆成可执行任务</h3>
-      <p>按你的十阶段生命周期拆解：调研纪要、评审后 48 小时对齐、周五自测 / 周一上线、上线两周复盘，都会自动补齐。</p>
-      <p class="chat-engine-note">${config.endpoint && config.model ? `当前已接入模型：<strong>${escapeHtml(config.model)}</strong>` : "当前使用<strong>本地规则拆解</strong>，没有调用任何模型；可在右上角接入自己的模型接口。"}</p>
+      <p class="chat-engine-note">${config.endpoint && config.model ? `已接入模型 <strong>${escapeHtml(config.model)}</strong>：拆解由 AI 直接规划——结合你的工作纪律（评审后 48 小时对齐、上线避开周五、上线两周复盘等），按内容决定任务数量，不再是固定模板。` : "当前使用<strong>本地规则拆解</strong>（固定十阶段模板，未调用模型）；可在右上角接入自己的模型接口，接入后改为 AI 直接规划。"}</p>
       <div class="chat-examples">${examples.map(example => `<button class="chat-example" data-action="assistant-example" data-text="${escapeHtml(example)}">${escapeHtml(example.replace(/\n/g, " / "))}</button>`).join("")}</div>
     </div>`;
   }
@@ -1292,7 +1332,7 @@
         <div class="composer-bar">
           <div class="composer-left">
             <button type="button" class="text-btn" data-action="assistant-upload">${icon("upload")}上传任务表</button>
-            <span class="composer-hint">默认按完整十阶段拆解，结果里可随时切换粒度</span>
+            <span class="composer-hint">${connected ? "AI 直接拆解：按内容规划任务与日期，随时回复「精简点」「去掉 xx」调整" : "本地模板拆解：默认完整十阶段，结果里可随时切换粒度"}</span>
           </div>
           <button type="submit" class="btn btn-primary btn-small">${icon("send")}拆解</button>
         </div>
@@ -1334,10 +1374,19 @@
   }
 
   function assistantHistoryForModel() {
-    return (state.assistant?.messages || [])
+    const messages = state.assistant?.messages || [];
+    const parts = messages
       .filter(message => message.role === "user" || (message.role === "assistant" && message.kind === "text"))
       .slice(-8)
       .map(message => ({ role: message.role, content: message.kind === "file" ? `上传了表格：${message.fileName}` : message.text }));
+    // 把当前未入库的拆解结果（无论模板展开还是 AI 直接生成）注入上下文，模型才能做「精简点/去掉xx」这类追问调整
+    const lastPending = [...messages].reverse().find(message => message.kind === "preview" && !message.committed && Array.isArray(message.tasks) && message.tasks.length);
+    if (lastPending) {
+      const digest = lastPending.tasks.slice(0, 40).map(({ title, project, stage, owner, priority, startDate, dueDate }) =>
+        ({ title, project, stage, owner, priority, startDate, dueDate }));
+      parts.push({ role: "assistant", content: `当前未入库的拆解任务列表（JSON，共 ${lastPending.tasks.length} 项）：\n${JSON.stringify(digest)}` });
+    }
+    return parts;
   }
 
   async function sendAssistantMessage(raw) {
@@ -1348,8 +1397,9 @@
     if (inputEl) inputEl.value = "";
     pushAssistantMessage({ role: "user", kind: "text", text: input });
 
-    // 短句追问：直接调整上一条未入库的预览，不再重复生成
+    // 短句追问：若上一条预览是模板展开（有 entries），本地直接重算；AI 直接拆解的预览走模型重生成
     const followUp = granularityFromFollowUp(input);
+    let aiFollowUpPreview = null;
     if (followUp) {
       const lastPreview = [...(state.assistant?.messages || [])].reverse().find(item => item.kind === "preview" && !item.committed && Array.isArray(item.entries) && item.entries.length);
       if (lastPreview) {
@@ -1360,6 +1410,7 @@
         });
         return;
       }
+      aiFollowUpPreview = [...(state.assistant?.messages || [])].reverse().find(item => item.kind === "preview" && !item.committed && Array.isArray(item.tasks) && item.tasks.length && !item.entries?.length) || null;
     }
 
     if (modelConfigured()) {
@@ -1372,10 +1423,23 @@
       try {
         const result = await requestModelDecomposition([...assistantHistoryForModel(), { role: "user", content: input }]);
         const config = loadModelConfig();
-        const entryProject = result.items.find(item => item.project)?.project || detectDefaultProject(input) || `对话拆解 ${chinaToday()}`;
-        const normalized = result.items.map(item => ({ ...item, project: item.project || entryProject }));
         pending.remove();
         if (result.reply) pushAssistantMessage({ role: "assistant", kind: "text", text: result.reply });
+        if (result.direct) {
+          // AI 直接拆解：原地更新追问的预览，新规划则生成新预览卡
+          const target = followUp ? aiFollowUpPreview : null;
+          if (target) {
+            target.tasks = result.tasks;
+            saveState();
+            renderAssistantLog();
+            render();
+          } else {
+            pushAssistantMessage({ role: "assistant", kind: "preview", engine: `模型：${config.model} · AI 直接拆解`, tasks: result.tasks, entries: [], project: "", mode: "" });
+          }
+          return;
+        }
+        const entryProject = result.items.find(item => item.project)?.project || detectDefaultProject(input) || `对话拆解 ${chinaToday()}`;
+        const normalized = result.items.map(item => ({ ...item, project: item.project || entryProject }));
         pushPreview({ entries: normalized, project: entryProject, mode: detectGranularity(input), engine: `模型：${config.model}` });
         return;
       } catch (error) {
