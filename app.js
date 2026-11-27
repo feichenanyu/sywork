@@ -747,6 +747,8 @@
     "6. 如果用户是对上一版任务列表提出调整（如「精简点」「详细点」「去掉测试环节」「增加合规审查」「按原样」），返回调整后的完整新列表：「按原样」表示只保留输入中明确提到的任务，不要扩展。",
     "今天的日期是"
   ].join("");
+  // 模型没按要求输出 JSON 时的自动重试提示（合并进最后一条用户消息，保持两种协议的消息角色交替）
+  const AI_JSON_RETRY_HINT = "上一次回复不符合要求：必须只输出一个 JSON 对象（含 reply 与 tasks 两个字段，tasks 每项含 title/stage/project/owner/priority/startDate/dueDate/estimate），不要输出任何解释文字、思维链或 markdown 代码块标记。";
 
   function loadModelConfig() {
     try {
@@ -1041,11 +1043,25 @@
   // ---------- 模型调用 ----------
   function parseModelJson(content) {
     let raw = text(content).trim();
-    raw = raw.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+    // 部分模型（尤其经中转的推理模型）会在正文外带 <think> 思维链，先剥掉再提取
+    raw = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+    raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
     const start = raw.indexOf("{");
     const end = raw.lastIndexOf("}");
-    if (start < 0 || end <= start) throw new Error("模型返回的内容不是 JSON");
-    return JSON.parse(raw.slice(start, end + 1));
+    if (start < 0 || end <= start) {
+      const snippet = raw.replace(/\s+/g, " ").slice(0, 120);
+      const error = new Error(`模型返回的内容不是 JSON${snippet ? `（返回片段：${snippet}）` : "（返回内容为空）"}`);
+      error.parseFailure = true;
+      throw error;
+    }
+    try {
+      return JSON.parse(raw.slice(start, end + 1));
+    } catch (cause) {
+      const snippet = raw.replace(/\s+/g, " ").slice(start, start + 120);
+      const error = new Error(`模型返回的 JSON 不完整或格式有误（返回片段：${snippet}）`);
+      error.parseFailure = true;
+      throw error;
+    }
   }
 
   function normalizeModelItem(item) {
@@ -1219,24 +1235,43 @@
     const config = loadModelConfig();
     if (!config.endpoint || !config.model) throw new Error("尚未配置模型");
     const weekday = parseLocalDate(chinaToday()).toLocaleDateString("zh-CN", { weekday: "long" });
+    const systemContent = `${AI_DIRECT_SYSTEM_PROMPT} ${chinaToday()}（${weekday}）。`;
     // 真模型直接规划任务列表时输出较长：Anthropic 协议必须给足 max_tokens（默认 1024 会截断 JSON），中转站生成分给足超时
-    const content = await postChat(config, [
-      { role: "system", content: `${AI_DIRECT_SYSTEM_PROMPT} ${chinaToday()}（${weekday}）。` },
-      ...history
-    ], { timeout: 90000, maxTokens: 4096 });
-    const parsed = parseModelJson(content);
-    const reply = text(parsed.reply);
-    if (Array.isArray(parsed.tasks) && parsed.tasks.length) {
+    const callOptions = { timeout: 90000, maxTokens: 4096 };
+    const toResult = content => {
+      const parsed = parseModelJson(content);
+      const reply = text(parsed.reply);
+      if (Array.isArray(parsed.tasks) && parsed.tasks.length) {
+        const lastUser = [...history].reverse().find(item => item.role === "user");
+        const fallbackProject = detectDefaultProject(text(lastUser?.content)) || `对话拆解 ${chinaToday()}`;
+        const tasks = parsed.tasks.map(task => normalizeModelTask(task, fallbackProject)).filter(Boolean);
+        if (!tasks.length) throw new Error("模型返回的任务列表没有可执行条目");
+        return { tasks, reply, direct: true };
+      }
+      // 兼容模型仍返回旧「条目」结构的情况：条目走本地十阶段展开
+      const items = Array.isArray(parsed.items) ? parsed.items.map(normalizeModelItem).filter(item => item.title) : [];
+      if (items.length) return { items, reply, direct: false };
+      throw new Error("模型没有识别出任务");
+    };
+    try {
+      const content = await postChat(config, [
+        { role: "system", content: systemContent },
+        ...history
+      ], callOptions);
+      return toResult(content);
+    } catch (error) {
+      // 网络 / HTTP / 超时类失败重试无意义；仅当模型没按要求输出 JSON 时，带一句强约束追问自动重试一次
+      if (error.name === "AbortError" || error.modelDetails || !error.parseFailure) throw error;
       const lastUser = [...history].reverse().find(item => item.role === "user");
-      const fallbackProject = detectDefaultProject(text(lastUser?.content)) || `对话拆解 ${chinaToday()}`;
-      const tasks = parsed.tasks.map(task => normalizeModelTask(task, fallbackProject)).filter(Boolean);
-      if (!tasks.length) throw new Error("模型返回的任务列表没有可执行条目");
-      return { tasks, reply, direct: true };
+      const retryHistory = lastUser
+        ? history.slice(0, history.lastIndexOf(lastUser)).concat([{ role: "user", content: `${text(lastUser.content)}\n\n（补充要求）${AI_JSON_RETRY_HINT}` }])
+        : history.concat([{ role: "user", content: AI_JSON_RETRY_HINT }]);
+      const content = await postChat(config, [
+        { role: "system", content: systemContent },
+        ...retryHistory
+      ], callOptions);
+      return toResult(content);
     }
-    // 兼容模型仍返回旧「条目」结构的情况：条目走本地十阶段展开
-    const items = Array.isArray(parsed.items) ? parsed.items.map(normalizeModelItem).filter(item => item.title) : [];
-    if (items.length) return { items, reply, direct: false };
-    throw new Error("模型没有识别出任务");
   }
 
   // ---------- 消息与视图 ----------
