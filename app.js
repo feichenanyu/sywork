@@ -1610,7 +1610,9 @@
       const suffix = facts.length ? `（${facts.join(" · ")}）` : "";
       return `- ${attempt.endpoint} → ${tidy(describeFetchError(error, true))}${suffix}`;
     });
-    box.textContent = `连接失败，各地址实际返回：\n${lines.join("\n")}\n都返回网页，说明地址打到了网站页面（核对 API 域名，注意 api. 前缀）；返回 401/403 则核对 API Key 与模型名。当前仍会使用本地规则拆解。`;
+    // 自建转发层返回「用法：/proxy/…」提示时，说明地址少了转发前缀，给出正确格式而不是泛泛的排查建议
+    const proxyMissing = results.some(({ attempt, error }) => /用法|\/proxy\//i.test(error?.modelDetails?.snippet || "") && !attempt.endpoint.includes("/proxy/"));
+    box.textContent = `连接失败，各地址实际返回：\n${lines.join("\n")}\n${proxyMissing ? "看起来是自建转发（Worker）地址少了 /proxy/ 前缀，正确格式：https://<worker域名>/proxy/<完整目标URL>，例如 https://xxx.workers.dev/proxy/https://api.3366.ai/v1/messages。\n" : ""}都返回网页，说明地址打到了网站页面（核对 API 域名，注意 api. 前缀）；返回 401/403 则核对 API Key 与模型名。当前仍会使用本地规则拆解。`;
   }
 
   function openModelDialog() {
