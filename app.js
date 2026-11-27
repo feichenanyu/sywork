@@ -745,6 +745,7 @@
     "4. 日期都是真实日历日期（YYYY-MM-DD）。用户说「下周一」「本月底」时按今天日期推算；推算不了或用户没说就用空字符串，不要编造。",
     "5. 项目名、负责人、优先级尊重用户输入；用户没说就留空字符串，不要编造。",
     "6. 如果用户是对上一版任务列表提出调整（如「精简点」「详细点」「去掉测试环节」「增加合规审查」「按原样」），返回调整后的完整新列表：「按原样」表示只保留输入中明确提到的任务，不要扩展。",
+    "7. 你无法访问链接、附件或外部页面。如果用户输入只有链接、文件名或问候语而没有具体事项，不要编造任务：tasks 返回空数组，并在 reply 里说明识别不了的原因、请用户粘贴具体内容（要做什么、时间、负责人）。",
     "今天的日期是"
   ].join("");
   // 模型没按要求输出 JSON 时的自动重试提示（合并进最后一条用户消息，保持两种协议的消息角色交替）
@@ -1251,7 +1252,8 @@
       // 兼容模型仍返回旧「条目」结构的情况：条目走本地十阶段展开
       const items = Array.isArray(parsed.items) ? parsed.items.map(normalizeModelItem).filter(item => item.title) : [];
       if (items.length) return { items, reply, direct: false };
-      throw new Error("模型没有识别出任务");
+      // 合法 JSON 但没有任务：常见于只发了链接/问候语，模型已按要求在 reply 里说明原因
+      return { reply, tasks: [], direct: true, empty: true };
     };
     try {
       const content = await postChat(config, [
@@ -1462,6 +1464,11 @@
         pending.remove();
         if (result.reply) pushAssistantMessage({ role: "assistant", kind: "text", text: result.reply });
         if (result.direct) {
+          // 模型没识别出可拆解的任务（常见于只发链接/问候语）：上屏模型说明即可，不回退本地模板硬拆
+          if (result.empty) {
+            if (!result.reply) pushAssistantMessage({ role: "assistant", kind: "text", text: "模型没有从这句话里识别出可拆解的任务。如果输入里有链接或附件，模型读不了它们——把具体事项直接打字或粘贴进来（要做什么、时间、负责人）再试。" });
+            return;
+          }
           // AI 直接拆解：原地更新追问的预览，新规划则生成新预览卡
           const target = followUp ? aiFollowUpPreview : null;
           if (target) {
