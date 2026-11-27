@@ -1219,10 +1219,11 @@
     const config = loadModelConfig();
     if (!config.endpoint || !config.model) throw new Error("尚未配置模型");
     const weekday = parseLocalDate(chinaToday()).toLocaleDateString("zh-CN", { weekday: "long" });
+    // 真模型直接规划任务列表时输出较长：Anthropic 协议必须给足 max_tokens（默认 1024 会截断 JSON），中转站生成分给足超时
     const content = await postChat(config, [
       { role: "system", content: `${AI_DIRECT_SYSTEM_PROMPT} ${chinaToday()}（${weekday}）。` },
       ...history
-    ]);
+    ], { timeout: 90000, maxTokens: 4096 });
     const parsed = parseModelJson(content);
     const reply = text(parsed.reply);
     if (Array.isArray(parsed.tasks) && parsed.tasks.length) {
